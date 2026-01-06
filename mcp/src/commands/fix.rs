@@ -26,7 +26,14 @@ struct FixDetail {
     applied: bool,
 }
 
-pub fn run(wikilinks: bool, footer: bool, migrate: bool, check: bool, dry_run: bool, json: bool) -> Result<()> {
+pub fn run(
+    wikilinks: bool,
+    footer: bool,
+    migrate: bool,
+    check: bool,
+    dry_run: bool,
+    json: bool,
+) -> Result<()> {
     let paths = VaultPaths::new();
 
     if wikilinks {
@@ -51,14 +58,20 @@ pub fn run(wikilinks: bool, footer: bool, migrate: bool, check: bool, dry_run: b
     Ok(())
 }
 
-fn run_footer_fix(paths: &VaultPaths, migrate: bool, check: bool, dry_run: bool, json: bool) -> Result<()> {
+fn run_footer_fix(
+    paths: &VaultPaths,
+    migrate: bool,
+    check: bool,
+    dry_run: bool,
+    json: bool,
+) -> Result<()> {
     let notes = collect_all_notes(paths);
     let mut issues: Vec<FooterIssue> = Vec::new();
 
     for note in &notes {
         let content = fs::read_to_string(&note.path)?;
         let note_issues = analyze_footer(&content, migrate);
-        
+
         for issue in note_issues {
             issues.push(FooterIssue {
                 file: note.name.clone(),
@@ -80,12 +93,15 @@ fn run_footer_fix(paths: &VaultPaths, migrate: bool, check: bool, dry_run: bool,
                     action: "footer-check".to_string(),
                     dry_run: true,
                     fixes_applied: 0,
-                    details: issues.iter().map(|i| FixDetail {
-                        file: i.file.clone(),
-                        issue: format!("{:?}", i.issue_type),
-                        fix: "Run vault fix --footer --execute".to_string(),
-                        applied: false,
-                    }).collect(),
+                    details: issues
+                        .iter()
+                        .map(|i| FixDetail {
+                            file: i.file.clone(),
+                            issue: format!("{:?}", i.issue_type),
+                            fix: "Run vault fix --footer --execute".to_string(),
+                            applied: false,
+                        })
+                        .collect(),
                 };
                 println!("{}", serde_json::to_string_pretty(&result)?);
             } else {
@@ -120,7 +136,9 @@ fn run_footer_fix(paths: &VaultPaths, migrate: bool, check: bool, dry_run: bool,
         let fix_description = match &issue.issue_type {
             FooterIssueType::MissingEnd => "Add <!-- footer_end -->".to_string(),
             FooterIssueType::MissingStart => "Add <!-- footer_start -->".to_string(),
-            FooterIssueType::MetadataNeedsMigration => "Convert ### Metadata to <!-- footer_meta -->".to_string(),
+            FooterIssueType::MetadataNeedsMigration => {
+                "Convert ### Metadata to <!-- footer_meta -->".to_string()
+            }
         };
 
         if !dry_run {
@@ -224,12 +242,13 @@ fn add_footer_start(content: &str) -> String {
 }
 
 fn migrate_metadata(content: &str) -> String {
-    let metadata_re = Regex::new(r"(?s)### Metadata\n(.*?)(?=\n<!-- footer_end -->|\n##|\z)").unwrap();
-    
+    let metadata_re =
+        Regex::new(r"(?s)### Metadata\n(.*?)(?=\n<!-- footer_end -->|\n##|\z)").unwrap();
+
     if let Some(caps) = metadata_re.captures(content) {
         let metadata_content = caps.get(1).map_or("", |m| m.as_str());
         let mut yaml_lines = Vec::new();
-        
+
         for line in metadata_content.lines() {
             let line = line.trim();
             if let Some(rest) = line.strip_prefix("- **") {
@@ -240,7 +259,7 @@ fn migrate_metadata(content: &str) -> String {
                 }
             }
         }
-        
+
         if !yaml_lines.is_empty() {
             let yaml_content = yaml_lines.join("\n");
             let footer_meta = format!("<!-- footer_meta\n{}\n-->", yaml_content);
@@ -248,7 +267,7 @@ fn migrate_metadata(content: &str) -> String {
             return new_content.to_string();
         }
     }
-    
+
     content.to_string()
 }
 

@@ -48,10 +48,7 @@ pub fn run(status_only: bool, rebuild: bool, json: bool) -> Result<()> {
                 "  {}",
                 "# Download paraphrase-multilingual-MiniLM-L12-v2".dimmed()
             );
-            eprintln!(
-                "  curl -L -o {} \\",
-                model_path.display()
-            );
+            eprintln!("  curl -L -o {} \\", model_path.display());
             eprintln!(
                 "    https://huggingface.co/sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2/resolve/main/onnx/model.onnx"
             );
@@ -108,17 +105,9 @@ pub fn run(status_only: bool, rebuild: bool, json: bool) -> Result<()> {
             );
         }
         if stats.failed > 0 {
-            println!(
-                "  {} {} notes failed",
-                "✗".red(),
-                stats.failed
-            );
+            println!("  {} {} notes failed", "✗".red(), stats.failed);
         }
-        println!(
-            "  {} Index saved to: {}",
-            "→".dimmed(),
-            db_path.display()
-        );
+        println!("  {} Index saved to: {}", "→".dimmed(), db_path.display());
     }
 
     Ok(())
@@ -151,9 +140,7 @@ fn show_status(db_path: &PathBuf, json: bool) -> Result<()> {
     let stats = db.get_stats()?;
 
     // Get file size
-    let file_size = std::fs::metadata(db_path)
-        .map(|m| m.len())
-        .unwrap_or(0);
+    let file_size = std::fs::metadata(db_path).map(|m| m.len()).unwrap_or(0);
 
     if json {
         println!(

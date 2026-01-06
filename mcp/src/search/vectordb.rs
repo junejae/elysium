@@ -226,17 +226,13 @@ impl VectorDB {
             .conn
             .query_row("SELECT COUNT(*) FROM notes", [], |row| row.get(0))?;
 
-        let embedding_count: i64 = self
-            .conn
-            .query_row("SELECT COUNT(*) FROM embeddings", [], |row| row.get(0))?;
+        let embedding_count: i64 =
+            self.conn
+                .query_row("SELECT COUNT(*) FROM embeddings", [], |row| row.get(0))?;
 
         let last_indexed: Option<i64> = self
             .conn
-            .query_row(
-                "SELECT MAX(indexed_at) FROM notes",
-                [],
-                |row| row.get(0),
-            )
+            .query_row("SELECT MAX(indexed_at) FROM notes", [], |row| row.get(0))
             .optional()?
             .flatten();
 

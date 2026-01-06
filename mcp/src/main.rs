@@ -81,9 +81,15 @@ enum Commands {
         wikilinks: bool,
         #[arg(long, help = "Fix missing footer markers")]
         footer: bool,
-        #[arg(long, help = "Migrate footer to v2 format (add footer_start, convert metadata)")]
+        #[arg(
+            long,
+            help = "Migrate footer to v2 format (add footer_start, convert metadata)"
+        )]
         migrate: bool,
-        #[arg(long, help = "Check only, exit 1 if issues found (for pre-commit hook)")]
+        #[arg(
+            long,
+            help = "Check only, exit 1 if issues found (for pre-commit hook)"
+        )]
         check: bool,
         #[arg(long, help = "Actually apply fixes (default: dry-run)")]
         execute: bool,
@@ -195,18 +201,23 @@ fn print_mcp_install_instructions() {
     use colored::Colorize;
     use core::paths::VAULT_PATH_ENV;
 
-    let vault_path = core::paths::get_vault_root()
-        .to_string_lossy()
-        .to_string();
+    let vault_path = core::paths::get_vault_root().to_string_lossy().to_string();
 
     println!("{}", "Elysium MCP Server Installation Guide".bold().cyan());
     println!();
     println!("{}", "Configuration Priority:".bold());
-    println!("  1. {} environment variable (recommended)", VAULT_PATH_ENV.yellow());
+    println!(
+        "  1. {} environment variable (recommended)",
+        VAULT_PATH_ENV.yellow()
+    );
     println!("  2. Current working directory (fallback)");
     println!();
-    println!("{}", "For Claude Desktop (~/.config/claude/claude_desktop_config.json):".dimmed());
-    println!(r#"{{
+    println!(
+        "{}",
+        "For Claude Desktop (~/.config/claude/claude_desktop_config.json):".dimmed()
+    );
+    println!(
+        r#"{{
   "mcpServers": {{
     "elysium": {{
       "command": "npx",
@@ -216,10 +227,13 @@ fn print_mcp_install_instructions() {
       }}
     }}
   }}
-}}"#, VAULT_PATH_ENV, vault_path);
+}}"#,
+        VAULT_PATH_ENV, vault_path
+    );
     println!();
     println!("{}", "For Claude Code (.mcp.json in vault root):".dimmed());
-    println!(r#"{{
+    println!(
+        r#"{{
   "mcpServers": {{
     "elysium": {{
       "command": "npx",
@@ -229,13 +243,24 @@ fn print_mcp_install_instructions() {
       }}
     }}
   }}
-}}"#, VAULT_PATH_ENV, vault_path);
+}}"#,
+        VAULT_PATH_ENV, vault_path
+    );
     println!();
     println!("{}", "Available tools:".bold());
-    println!("  • {} - Semantic search using gist embeddings", "vault_search".green());
+    println!(
+        "  • {} - Semantic search using gist embeddings",
+        "vault_search".green()
+    );
     println!("  • {} - Get full note content", "vault_get_note".green());
-    println!("  • {} - List notes with filters", "vault_list_notes".green());
+    println!(
+        "  • {} - List notes with filters",
+        "vault_list_notes".green()
+    );
     println!("  • {} - Get vault health score", "vault_health".green());
     println!("  • {} - Get vault status summary", "vault_status".green());
-    println!("  • {} - Run policy compliance audit", "vault_audit".green());
+    println!(
+        "  • {} - Run policy compliance audit",
+        "vault_audit".green()
+    );
 }

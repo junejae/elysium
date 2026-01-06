@@ -2,10 +2,9 @@
 
 use anyhow::Result;
 use rmcp::{
-    model::{CallToolResult, Content, ServerInfo},
-    tool, tool_router,
     handler::server::{tool::ToolRouter, wrapper::Parameters},
-    ErrorData as McpError, ServerHandler, ServiceExt,
+    model::{CallToolResult, Content, ServerInfo},
+    tool, tool_router, ErrorData as McpError, ServerHandler, ServiceExt,
 };
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -162,7 +161,9 @@ impl VaultService {
 #[tool_router]
 impl VaultService {
     /// Search notes using semantic similarity
-    #[tool(description = "Search Second Brain Vault using semantic similarity. Returns notes with similar meaning to the query based on gist field embeddings.")]
+    #[tool(
+        description = "Search Second Brain Vault using semantic similarity. Returns notes with similar meaning to the query based on gist field embeddings."
+    )]
     async fn vault_search(
         &self,
         params: Parameters<SearchParams>,
@@ -170,11 +171,15 @@ impl VaultService {
         let mut engine = self.get_engine()?;
         // Clamp limit: default 5, max 100 (DoS prevention)
         let limit = params.0.limit.max(1).min(100);
-        let limit = if limit == 1 && params.0.limit == 0 { 5 } else { limit };
+        let limit = if limit == 1 && params.0.limit == 0 {
+            5
+        } else {
+            limit
+        };
 
-        let results = engine.search(&params.0.query, limit).map_err(|e| {
-            McpError::internal_error(format!("Search failed: {}", e), None)
-        })?;
+        let results = engine
+            .search(&params.0.query, limit)
+            .map_err(|e| McpError::internal_error(format!("Search failed: {}", e), None))?;
 
         let json_results: Vec<SearchResultJson> = results
             .into_iter()
@@ -196,7 +201,9 @@ impl VaultService {
     }
 
     /// Get full content of a specific note
-    #[tool(description = "Get the full content and metadata of a specific note from Second Brain Vault.")]
+    #[tool(
+        description = "Get the full content and metadata of a specific note from Second Brain Vault."
+    )]
     async fn vault_get_note(
         &self,
         params: Parameters<GetNoteParams>,
@@ -209,7 +216,8 @@ impl VaultService {
         let found = notes.into_iter().find(|n| {
             n.name == *note_name
                 || n.path.to_string_lossy().contains(note_name)
-                || n.path.file_stem().map(|s| s.to_string_lossy().to_string()) == Some(note_name.clone())
+                || n.path.file_stem().map(|s| s.to_string_lossy().to_string())
+                    == Some(note_name.clone())
         });
 
         match found {
@@ -236,11 +244,10 @@ impl VaultService {
 
                 Ok(CallToolResult::success(vec![Content::text(output)]))
             }
-            None => {
-                Ok(CallToolResult::success(vec![Content::text(
-                    format!("Note not found: {}", note_name)
-                )]))
-            }
+            None => Ok(CallToolResult::success(vec![Content::text(format!(
+                "Note not found: {}",
+                note_name
+            ))])),
         }
     }
 
@@ -256,16 +263,21 @@ impl VaultService {
         let area = &params.0.area;
         // Clamp limit: default 50, max 500 (DoS prevention)
         let limit = params.0.limit.max(1).min(500);
-        let limit = if limit == 1 && params.0.limit == 0 { 50 } else { limit };
+        let limit = if limit == 1 && params.0.limit == 0 {
+            50
+        } else {
+            limit
+        };
 
         let filtered: Vec<NoteInfoJson> = notes
             .into_iter()
             .filter(|n| {
-                note_type.as_ref().map_or(true, |t| {
-                    n.note_type().map_or(false, |nt| nt == t)
-                }) && area.as_ref().map_or(true, |a| {
-                    n.area().map_or(false, |na| na == a)
-                })
+                note_type
+                    .as_ref()
+                    .map_or(true, |t| n.note_type().map_or(false, |nt| nt == t))
+                    && area
+                        .as_ref()
+                        .map_or(true, |a| n.area().map_or(false, |na| na == a))
             })
             .take(limit)
             .map(|n| NoteInfoJson {
@@ -287,7 +299,9 @@ impl VaultService {
     }
 
     /// Get vault health score
-    #[tool(description = "Get Second Brain Vault health score (0-100) based on schema compliance, gist coverage, and link integrity.")]
+    #[tool(
+        description = "Get Second Brain Vault health score (0-100) based on schema compliance, gist coverage, and link integrity."
+    )]
     async fn vault_health(&self) -> Result<CallToolResult, McpError> {
         let vault_paths = self.get_vault_paths();
         let notes = collect_all_notes(&vault_paths);
@@ -297,9 +311,21 @@ impl VaultService {
         let with_type = notes.iter().filter(|n| n.note_type().is_some()).count();
         let with_area = notes.iter().filter(|n| n.area().is_some()).count();
 
-        let gist_score = if total > 0 { (with_gist as f64 / total as f64) * 40.0 } else { 0.0 };
-        let type_score = if total > 0 { (with_type as f64 / total as f64) * 30.0 } else { 0.0 };
-        let area_score = if total > 0 { (with_area as f64 / total as f64) * 30.0 } else { 0.0 };
+        let gist_score = if total > 0 {
+            (with_gist as f64 / total as f64) * 40.0
+        } else {
+            0.0
+        };
+        let type_score = if total > 0 {
+            (with_type as f64 / total as f64) * 30.0
+        } else {
+            0.0
+        };
+        let area_score = if total > 0 {
+            (with_area as f64 / total as f64) * 30.0
+        } else {
+            0.0
+        };
 
         let health_score = (gist_score + type_score + area_score).round() as u32;
 
@@ -312,18 +338,22 @@ impl VaultService {
         });
 
         Ok(CallToolResult::success(vec![Content::text(
-            serde_json::to_string_pretty(&output).unwrap_or_default()
+            serde_json::to_string_pretty(&output).unwrap_or_default(),
         )]))
     }
 
     /// Get vault status summary
-    #[tool(description = "Get Second Brain Vault status summary including note counts by type and area.")]
+    #[tool(
+        description = "Get Second Brain Vault status summary including note counts by type and area."
+    )]
     async fn vault_status(&self) -> Result<CallToolResult, McpError> {
         let vault_paths = self.get_vault_paths();
         let notes = collect_all_notes(&vault_paths);
 
-        let mut by_type: std::collections::HashMap<String, usize> = std::collections::HashMap::new();
-        let mut by_area: std::collections::HashMap<String, usize> = std::collections::HashMap::new();
+        let mut by_type: std::collections::HashMap<String, usize> =
+            std::collections::HashMap::new();
+        let mut by_area: std::collections::HashMap<String, usize> =
+            std::collections::HashMap::new();
 
         for note in &notes {
             if let Some(t) = note.note_type() {
@@ -341,12 +371,14 @@ impl VaultService {
         });
 
         Ok(CallToolResult::success(vec![Content::text(
-            serde_json::to_string_pretty(&output).unwrap_or_default()
+            serde_json::to_string_pretty(&output).unwrap_or_default(),
         )]))
     }
 
     /// Run vault policy compliance audit
-    #[tool(description = "Run vault policy compliance audit. Returns check results for schema validation, wikilinks, folder-type matching, gist coverage, tag usage, and orphan detection.")]
+    #[tool(
+        description = "Run vault policy compliance audit. Returns check results for schema validation, wikilinks, folder-type matching, gist coverage, tag usage, and orphan detection."
+    )]
     async fn vault_audit(
         &self,
         params: Parameters<AuditParams>,
@@ -424,7 +456,11 @@ impl VaultService {
             status: if errors.is_empty() { "pass" } else { "fail" }.to_string(),
             errors: errors.len(),
             details: None,
-            error_list: if verbose && !errors.is_empty() { Some(errors) } else { None },
+            error_list: if verbose && !errors.is_empty() {
+                Some(errors)
+            } else {
+                None
+            },
         }
     }
 
@@ -452,11 +488,19 @@ impl VaultService {
             status: if errors.is_empty() { "pass" } else { "fail" }.to_string(),
             errors: errors.len(),
             details: None,
-            error_list: if verbose && !errors.is_empty() { Some(errors) } else { None },
+            error_list: if verbose && !errors.is_empty() {
+                Some(errors)
+            } else {
+                None
+            },
         }
     }
 
-    fn check_folder_type(&self, notes: &[crate::core::note::Note], verbose: bool) -> AuditCheckJson {
+    fn check_folder_type(
+        &self,
+        notes: &[crate::core::note::Note],
+        verbose: bool,
+    ) -> AuditCheckJson {
         let mut errors = Vec::new();
         for note in notes {
             if !note.check_folder_type_match() {
@@ -477,7 +521,11 @@ impl VaultService {
             status: if errors.is_empty() { "pass" } else { "fail" }.to_string(),
             errors: errors.len(),
             details: None,
-            error_list: if verbose && !errors.is_empty() { Some(errors) } else { None },
+            error_list: if verbose && !errors.is_empty() {
+                Some(errors)
+            } else {
+                None
+            },
         }
     }
 
@@ -506,7 +554,11 @@ impl VaultService {
             status: if missing == 0 { "pass" } else { "fail" }.to_string(),
             errors: missing,
             details: Some(format!("{}% coverage ({} missing)", coverage, missing)),
-            error_list: if verbose && !errors.is_empty() { Some(errors) } else { None },
+            error_list: if verbose && !errors.is_empty() {
+                Some(errors)
+            } else {
+                None
+            },
         }
     }
 
@@ -523,7 +575,11 @@ impl VaultService {
 
         let total = notes.len();
         let without_tags = errors.len();
-        let ratio = if total > 0 { without_tags as f64 / total as f64 } else { 0.0 };
+        let ratio = if total > 0 {
+            without_tags as f64 / total as f64
+        } else {
+            0.0
+        };
 
         AuditCheckJson {
             id: "tags".to_string(),
@@ -531,7 +587,11 @@ impl VaultService {
             status: if ratio < 0.3 { "pass" } else { "fail" }.to_string(),
             errors: without_tags,
             details: Some(format!("{:.0}% notes without tags", ratio * 100.0)),
-            error_list: if verbose && !errors.is_empty() { Some(errors) } else { None },
+            error_list: if verbose && !errors.is_empty() {
+                Some(errors)
+            } else {
+                None
+            },
         }
     }
 
@@ -562,7 +622,11 @@ impl VaultService {
 
         let total = notes.len();
         let orphans = errors.len();
-        let ratio = if total > 0 { orphans as f64 / total as f64 } else { 0.0 };
+        let ratio = if total > 0 {
+            orphans as f64 / total as f64
+        } else {
+            0.0
+        };
 
         AuditCheckJson {
             id: "orphans".to_string(),
@@ -570,7 +634,11 @@ impl VaultService {
             status: if ratio < 0.3 { "pass" } else { "fail" }.to_string(),
             errors: orphans,
             details: Some(format!("{} orphan notes ({:.0}%)", orphans, ratio * 100.0)),
-            error_list: if verbose && !errors.is_empty() { Some(errors) } else { None },
+            error_list: if verbose && !errors.is_empty() {
+                Some(errors)
+            } else {
+                None
+            },
         }
     }
 }

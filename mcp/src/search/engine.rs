@@ -86,8 +86,8 @@ impl SearchEngine {
     /// Ensure model is loaded
     fn ensure_model(&mut self) -> Result<&EmbeddingModel> {
         if self.model.is_none() {
-            let model = EmbeddingModel::load(&self.model_path)
-                .context("Failed to load embedding model")?;
+            let model =
+                EmbeddingModel::load(&self.model_path).context("Failed to load embedding model")?;
             self.model = Some(model);
         }
         Ok(self.model.as_ref().unwrap())
@@ -237,7 +237,11 @@ pub fn simple_search(vault_paths: &VaultPaths, query: &str, limit: usize) -> Vec
         .collect();
 
     // Sort by score descending
-    results.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
+    results.sort_by(|a, b| {
+        b.score
+            .partial_cmp(&a.score)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
     results.truncate(limit);
 
     results

@@ -1,6 +1,6 @@
 {
   "name": "elysium-mcp",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "MCP server for Obsidian-based Second Brain with AI-powered semantic search",
   "keywords": ["mcp", "obsidian", "semantic-search", "second-brain", "ai", "claude"],
   "author": "junejae",

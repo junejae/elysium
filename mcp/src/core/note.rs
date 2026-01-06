@@ -7,7 +7,7 @@ use chrono::{DateTime, Local};
 
 use super::frontmatter::Frontmatter;
 use super::paths::VaultPaths;
-use super::schema::SchemaViolation;
+use super::schema::{SchemaValidator, SchemaViolation};
 use super::wikilink::extract_wikilinks;
 
 pub struct Note {
@@ -55,6 +55,14 @@ impl Note {
     pub fn validate_schema(&self) -> Vec<SchemaViolation> {
         match &self.frontmatter {
             Some(fm) => fm.validate(),
+            None => vec![SchemaViolation::MissingFrontmatter],
+        }
+    }
+
+    /// Validate schema using configurable validator
+    pub fn validate_schema_with_config(&self, validator: &SchemaValidator) -> Vec<SchemaViolation> {
+        match &self.frontmatter {
+            Some(fm) => fm.validate_with_config(validator),
             None => vec![SchemaViolation::MissingFrontmatter],
         }
     }

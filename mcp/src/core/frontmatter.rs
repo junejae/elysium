@@ -1,7 +1,11 @@
+//! Frontmatter parsing and validation
+//!
+//! Parses YAML frontmatter from markdown notes and validates against schema.
+
 use lazy_static::lazy_static;
 use regex::Regex;
 
-use super::schema::{SchemaViolation, VALID_AREAS, VALID_STATUS, VALID_TYPES};
+use super::schema::{SchemaValidator, SchemaViolation, VALID_AREAS, VALID_STATUS, VALID_TYPES};
 
 lazy_static! {
     static ref FRONTMATTER_RE: Regex = Regex::new(r"(?s)^---\r?\n(.*?)\r?\n---").unwrap();
@@ -93,7 +97,13 @@ impl Frontmatter {
             .unwrap_or_default()
     }
 
+    /// Validate frontmatter using default schema (backward compatible)
     pub fn validate(&self) -> Vec<SchemaViolation> {
+        self.validate_with_defaults()
+    }
+
+    /// Validate frontmatter using hardcoded default schema
+    fn validate_with_defaults(&self) -> Vec<SchemaViolation> {
         let mut violations = Vec::new();
 
         match &self.note_type {
@@ -133,6 +143,66 @@ impl Frontmatter {
                 violations.push(SchemaViolation::HierarchicalTag(tag.clone()));
             }
             if tag != &tag.to_lowercase() {
+                violations.push(SchemaViolation::NonLowercaseTag(tag.clone()));
+            }
+        }
+
+        violations
+    }
+
+    /// Validate frontmatter using configurable schema validator
+    pub fn validate_with_config(&self, validator: &SchemaValidator) -> Vec<SchemaViolation> {
+        let mut violations = Vec::new();
+
+        // Type validation
+        if validator.is_required("type") {
+            match &self.note_type {
+                None => violations.push(SchemaViolation::MissingField("type".to_string())),
+                Some(t) if !validator.is_valid_type(t) => {
+                    violations.push(SchemaViolation::InvalidType(t.clone()))
+                }
+                _ => {}
+            }
+        }
+
+        // Status validation
+        if validator.is_required("status") {
+            match &self.status {
+                None => violations.push(SchemaViolation::MissingField("status".to_string())),
+                Some(s) if !validator.is_valid_status(s) => {
+                    violations.push(SchemaViolation::InvalidStatus(s.clone()))
+                }
+                _ => {}
+            }
+        }
+
+        // Area validation
+        if validator.is_required("area") {
+            match &self.area {
+                None => violations.push(SchemaViolation::MissingField("area".to_string())),
+                Some(a) if !validator.is_valid_area(a) => {
+                    violations.push(SchemaViolation::InvalidArea(a.clone()))
+                }
+                _ => {}
+            }
+        }
+
+        // Gist validation
+        if validator.is_required("gist") && self.gist.is_none() {
+            violations.push(SchemaViolation::MissingField("gist".to_string()));
+        }
+
+        // Tag count validation
+        if self.tags.len() > validator.max_tags() {
+            violations.push(SchemaViolation::TooManyTags(self.tags.len()));
+        }
+
+        // Tag format validation
+        for tag in &self.tags {
+            if !validator.allow_hierarchical_tags() && tag.contains('/') {
+                violations.push(SchemaViolation::HierarchicalTag(tag.clone()));
+            }
+            if validator.require_lowercase_tags() && tag != &tag.to_lowercase() {
                 violations.push(SchemaViolation::NonLowercaseTag(tag.clone()));
             }
         }

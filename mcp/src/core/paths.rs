@@ -1,8 +1,15 @@
+//! Vault path management
+//!
+//! Handles vault root detection and folder path resolution.
+
 use std::path::PathBuf;
+
+use super::config::{Config, ResolvedPaths};
 
 /// Environment variable for vault path configuration
 pub const VAULT_PATH_ENV: &str = "ELYSIUM_VAULT_PATH";
 
+/// Vault paths wrapper that combines config and resolved paths
 pub struct VaultPaths {
     pub root: PathBuf,
     pub notes: PathBuf,
@@ -14,28 +21,39 @@ pub struct VaultPaths {
     pub attachments: PathBuf,
     pub opencode: PathBuf,
     pub inbox: PathBuf,
+    pub config: Config,
 }
 
 impl VaultPaths {
     /// Create VaultPaths from environment variable or current directory.
-    /// Priority: ELYSIUM_VAULT_PATH env var > current directory
+    /// Loads config from vault root.
     pub fn new() -> Self {
         let root = get_vault_root();
         Self::from_root(root)
     }
 
+    /// Create VaultPaths from a specific root directory
     pub fn from_root(root: PathBuf) -> Self {
+        let config = Config::load(&root);
+        Self::from_root_with_config(root, config)
+    }
+
+    /// Create VaultPaths with explicit config
+    pub fn from_root_with_config(root: PathBuf, config: Config) -> Self {
+        let resolved = config.resolve_paths(&root);
+
         Self {
-            notes: root.join("Notes"),
-            projects: root.join("Projects"),
-            archive: root.join("Archive"),
-            system: root.join("_system"),
-            dashboards: root.join("_system/Dashboards"),
-            templates: root.join("_system/Templates"),
-            attachments: root.join("_system/Attachments"),
+            notes: resolved.notes,
+            projects: resolved.projects,
+            archive: resolved.archive,
+            system: resolved.system.clone(),
+            dashboards: resolved.system.join("Dashboards"),
+            templates: resolved.templates,
+            attachments: resolved.attachments,
             opencode: root.join(".opencode"),
-            inbox: root.join("inbox.md"),
+            inbox: resolved.inbox,
             root,
+            config,
         }
     }
 
@@ -54,6 +72,11 @@ impl VaultPaths {
             (&self.attachments, "Media files", false),
             (&self.opencode, "AI agent configuration", true),
         ]
+    }
+
+    /// Get the loaded configuration
+    pub fn get_config(&self) -> &Config {
+        &self.config
     }
 }
 

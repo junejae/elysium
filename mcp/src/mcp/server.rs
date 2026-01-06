@@ -12,6 +12,7 @@ use std::path::PathBuf;
 
 use crate::core::note::{collect_all_notes, collect_note_names};
 use crate::core::paths::VaultPaths;
+use crate::core::schema::SchemaValidator;
 use crate::search::engine::SearchEngine;
 use std::collections::HashSet;
 
@@ -155,6 +156,11 @@ impl VaultService {
 
     fn get_vault_paths(&self) -> VaultPaths {
         VaultPaths::from_root(self.vault_path.clone())
+    }
+
+    fn get_schema_validator(&self) -> SchemaValidator {
+        let vault_paths = self.get_vault_paths();
+        SchemaValidator::from_config(&vault_paths.config.schema)
     }
 }
 
@@ -439,9 +445,10 @@ impl VaultService {
 // Audit helper methods
 impl VaultService {
     fn check_schema(&self, notes: &[crate::core::note::Note], verbose: bool) -> AuditCheckJson {
+        let validator = self.get_schema_validator();
         let mut errors = Vec::new();
         for note in notes {
-            let violations = note.validate_schema();
+            let violations = note.validate_schema_with_config(&validator);
             for violation in violations {
                 errors.push(AuditErrorJson {
                     note: note.name.clone(),

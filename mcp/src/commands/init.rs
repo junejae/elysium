@@ -1,14 +1,85 @@
+//! Vault initialization commands
+
 use anyhow::Result;
 use colored::*;
 use std::fs;
 
-use crate::core::paths::VaultPaths;
+use crate::core::config::{Config, CONFIG_FILE_NAME};
+use crate::core::paths::{get_vault_root, VaultPaths};
 
-pub fn run(create: bool) -> Result<()> {
+/// Run init command
+pub fn run(create: bool, config: bool) -> Result<()> {
+    if config {
+        return run_config_init();
+    }
+
+    run_structure_init(create)
+}
+
+/// Generate .elysium.json config file
+fn run_config_init() -> Result<()> {
+    let vault_root = get_vault_root();
+    let config_path = vault_root.join(CONFIG_FILE_NAME);
+
+    println!("{}", "Elysium Configuration Generator".bold());
+    println!("{}", "=".repeat(50));
+    println!();
+
+    if config_path.exists() {
+        println!("{} {} already exists", "!".yellow(), config_path.display());
+        println!();
+        println!("Options:");
+        println!("  1. Edit the existing file manually");
+        println!("  2. Delete it and run this command again");
+        println!();
+        return Ok(());
+    }
+
+    let config = Config::default();
+    config.save(&vault_root)?;
+
+    println!("{} Created {}", "✓".green(), config_path.display());
+    println!();
+    println!("{}", "Configuration file structure:".cyan());
+    println!();
+
+    // Print abbreviated config preview
+    println!("  folders:");
+    println!("    notes: \"{}\"", config.folders.notes);
+    println!("    projects: \"{}\"", config.folders.projects);
+    println!("    archive: \"{}\"", config.folders.archive);
+    println!();
+    println!("  schema:");
+    println!("    types: {:?}", config.schema.types);
+    println!("    statuses: {:?}", config.schema.statuses);
+    println!("    areas: {:?}", config.schema.areas);
+    println!("    max_tags: {}", config.schema.max_tags);
+    println!();
+    println!(
+        "{}",
+        "Customize this file to match your vault structure.".dimmed()
+    );
+    println!();
+
+    Ok(())
+}
+
+/// Validate and create vault folder structure
+fn run_structure_init(create: bool) -> Result<()> {
     let paths = VaultPaths::new();
 
     println!("{}", "Second Brain Vault Structure Validator".bold());
     println!("{}", "=".repeat(50));
+    println!();
+
+    // Show loaded config info
+    let config_path = paths.root.join(CONFIG_FILE_NAME);
+    if config_path.exists() {
+        println!("{} Using config: {}", "ℹ".cyan(), config_path.display());
+    } else {
+        println!("{} No config found, using defaults", "ℹ".dimmed());
+        println!("  Run {} to create one", "elysium init --config".cyan());
+    }
     println!();
 
     let mut missing = 0;

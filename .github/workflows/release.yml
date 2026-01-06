@@ -95,7 +95,7 @@ jobs:
         run: |
           cd npm
           VERSION=${GITHUB_REF_NAME#v}
-          npm version $VERSION --no-git-tag-version
+          node -e "const pkg=require('./package.json'); pkg.version='$VERSION'; require('fs').writeFileSync('package.json', JSON.stringify(pkg, null, 2)+'\n');"
 
       - name: Publish to npm
         run: |

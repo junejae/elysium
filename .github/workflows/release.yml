@@ -82,10 +82,6 @@ jobs:
   publish-npm:
     needs: release
     runs-on: ubuntu-latest
-    environment: npm
-    permissions:
-      contents: read
-      id-token: write  # Required for OIDC trusted publishing
     steps:
       - uses: actions/checkout@v4
 
@@ -105,3 +101,5 @@ jobs:
         run: |
           cd npm
           npm publish --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

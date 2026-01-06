@@ -14,6 +14,6 @@ pub mod search;
 // Re-exports for convenience
 pub use core::frontmatter::Frontmatter;
 pub use core::note::{collect_all_notes, collect_note_names, Note};
-pub use core::paths::VaultPaths;
+pub use core::paths::{get_vault_root, VaultPaths, VAULT_PATH_ENV};
 pub use core::schema::{SchemaViolation, VALID_AREAS, VALID_STATUS, VALID_TYPES};
 pub use core::wikilink::extract_wikilinks;

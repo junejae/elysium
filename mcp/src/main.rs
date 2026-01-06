@@ -185,7 +185,7 @@ fn main() -> anyhow::Result<()> {
 
 #[cfg(feature = "mcp")]
 fn run_mcp_server() -> anyhow::Result<()> {
-    let vault_path = std::env::current_dir()?;
+    let vault_path = core::paths::get_vault_root();
     let runtime = tokio::runtime::Runtime::new()?;
     runtime.block_on(mcp::run_mcp_server(vault_path))
 }
@@ -193,14 +193,17 @@ fn run_mcp_server() -> anyhow::Result<()> {
 #[cfg(feature = "mcp")]
 fn print_mcp_install_instructions() {
     use colored::Colorize;
+    use core::paths::VAULT_PATH_ENV;
 
-    let vault_path = std::env::current_dir()
-        .map(|p| p.to_string_lossy().to_string())
-        .unwrap_or_else(|_| "/path/to/your/vault".to_string());
+    let vault_path = core::paths::get_vault_root()
+        .to_string_lossy()
+        .to_string();
 
     println!("{}", "Elysium MCP Server Installation Guide".bold().cyan());
     println!();
-    println!("Add the following to your Claude configuration:");
+    println!("{}", "Configuration Priority:".bold());
+    println!("  1. {} environment variable (recommended)", VAULT_PATH_ENV.yellow());
+    println!("  2. Current working directory (fallback)");
     println!();
     println!("{}", "For Claude Desktop (~/.config/claude/claude_desktop_config.json):".dimmed());
     println!(r#"{{
@@ -208,21 +211,25 @@ fn print_mcp_install_instructions() {
     "elysium": {{
       "command": "npx",
       "args": ["elysium-mcp"],
-      "cwd": "{}"
+      "env": {{
+        "{}": "{}"
+      }}
     }}
   }}
-}}"#, vault_path);
+}}"#, VAULT_PATH_ENV, vault_path);
     println!();
-    println!("{}", "Or with direct binary:".dimmed());
+    println!("{}", "For Claude Code (.mcp.json in vault root):".dimmed());
     println!(r#"{{
   "mcpServers": {{
     "elysium": {{
-      "command": "elysium",
-      "args": [],
-      "cwd": "{}"
+      "command": "npx",
+      "args": ["elysium-mcp"],
+      "env": {{
+        "{}": "{}"
+      }}
     }}
   }}
-}}"#, vault_path);
+}}"#, VAULT_PATH_ENV, vault_path);
     println!();
     println!("{}", "Available tools:".bold());
     println!("  • {} - Semantic search using gist embeddings", "vault_search".green());

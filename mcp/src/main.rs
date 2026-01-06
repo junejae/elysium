@@ -1,0 +1,234 @@
+mod commands;
+mod core;
+#[cfg(feature = "mcp")]
+mod mcp;
+mod search;
+
+use clap::{Parser, Subcommand};
+
+#[derive(Parser)]
+#[command(name = "elysium")]
+#[command(about = "MCP server for Obsidian-based Second Brain with AI-powered semantic search", long_about = None)]
+#[command(version)]
+struct Cli {
+    #[command(subcommand)]
+    command: Option<Commands>,
+}
+
+#[derive(Subcommand)]
+enum Commands {
+    // ===== MCP Server (also default) =====
+    /// Start MCP server for Claude integration
+    #[cfg(feature = "mcp")]
+    Mcp {
+        #[arg(long, help = "Show Claude configuration instructions")]
+        install: bool,
+    },
+
+    // ===== Core Commands =====
+    Init {
+        #[arg(long, help = "Create missing folders")]
+        create: bool,
+    },
+    Validate {
+        #[arg(long, help = "Check YAML schema only")]
+        schema: bool,
+        #[arg(long, help = "Check wikilinks only")]
+        wikilinks: bool,
+        #[arg(long, help = "JSON output")]
+        json: bool,
+    },
+    Audit {
+        #[arg(short, long, help = "Quick mode (schema + wikilinks only)")]
+        quick: bool,
+        #[arg(long, help = "JSON output")]
+        json: bool,
+        #[arg(long, help = "Exit 1 on violations")]
+        strict: bool,
+    },
+    Status {
+        #[arg(short, long, help = "Brief output")]
+        brief: bool,
+        #[arg(long, help = "JSON output")]
+        json: bool,
+    },
+    Health {
+        #[arg(short, long, help = "Show detailed breakdown")]
+        details: bool,
+        #[arg(long, help = "JSON output")]
+        json: bool,
+    },
+    Search {
+        query: String,
+        #[arg(long, help = "Search in gist only")]
+        gist: bool,
+        #[arg(long, help = "Limit results")]
+        limit: Option<usize>,
+    },
+    Related {
+        note: String,
+        #[arg(long, help = "Minimum shared tags")]
+        min_tags: Option<usize>,
+    },
+    Tags {
+        #[arg(short, long, help = "Analyze tags and suggest improvements")]
+        analyze: bool,
+        #[arg(long, help = "JSON output")]
+        json: bool,
+    },
+    Fix {
+        #[arg(long, help = "Fix broken wikilinks")]
+        wikilinks: bool,
+        #[arg(long, help = "Fix missing footer markers")]
+        footer: bool,
+        #[arg(long, help = "Migrate footer to v2 format (add footer_start, convert metadata)")]
+        migrate: bool,
+        #[arg(long, help = "Check only, exit 1 if issues found (for pre-commit hook)")]
+        check: bool,
+        #[arg(long, help = "Actually apply fixes (default: dry-run)")]
+        execute: bool,
+        #[arg(long, help = "JSON output")]
+        json: bool,
+    },
+
+    // ===== Semantic Search =====
+    /// Build semantic search index
+    Index {
+        #[arg(long, help = "Show index status only")]
+        status: bool,
+        #[arg(long, help = "Force rebuild index")]
+        rebuild: bool,
+        #[arg(long, help = "JSON output")]
+        json: bool,
+    },
+    /// Semantic search using AI embeddings
+    #[command(name = "semantic-search", alias = "ss")]
+    SemanticSearch {
+        query: String,
+        #[arg(long, short, help = "Limit results")]
+        limit: Option<usize>,
+        #[arg(long, help = "JSON output")]
+        json: bool,
+        #[arg(long, help = "Use simple string search (no AI)")]
+        fallback: bool,
+    },
+}
+
+fn main() -> anyhow::Result<()> {
+    let cli = Cli::parse();
+
+    match cli.command {
+        // Default: run MCP server
+        None => {
+            #[cfg(feature = "mcp")]
+            {
+                run_mcp_server()
+            }
+            #[cfg(not(feature = "mcp"))]
+            {
+                eprintln!("MCP feature not enabled. Build with --features mcp");
+                std::process::exit(1);
+            }
+        }
+
+        // MCP Server
+        #[cfg(feature = "mcp")]
+        Some(Commands::Mcp { install }) => {
+            if install {
+                print_mcp_install_instructions();
+                Ok(())
+            } else {
+                run_mcp_server()
+            }
+        }
+
+        // Core commands
+        Some(Commands::Init { create }) => commands::init::run(create),
+        Some(Commands::Validate {
+            schema,
+            wikilinks,
+            json,
+        }) => commands::validate::run(schema, wikilinks, json),
+        Some(Commands::Audit {
+            quick,
+            json,
+            strict,
+        }) => commands::audit::run(quick, json, strict),
+        Some(Commands::Status { brief, json }) => commands::status::run(brief, json),
+        Some(Commands::Health { details, json }) => commands::health::run(details, json),
+        Some(Commands::Search { query, gist, limit }) => commands::search::run(&query, gist, limit),
+        Some(Commands::Related { note, min_tags }) => commands::related::run(&note, min_tags),
+        Some(Commands::Tags { analyze, json }) => commands::tags::run(analyze, json),
+        Some(Commands::Fix {
+            wikilinks,
+            footer,
+            migrate,
+            check,
+            execute,
+            json,
+        }) => commands::fix::run(wikilinks, footer, migrate, check, !execute, json),
+
+        // Semantic Search
+        Some(Commands::Index {
+            status,
+            rebuild,
+            json,
+        }) => commands::index::run(status, rebuild, json),
+        Some(Commands::SemanticSearch {
+            query,
+            limit,
+            json,
+            fallback,
+        }) => commands::semantic_search::run(&query, limit, json, fallback),
+    }
+}
+
+#[cfg(feature = "mcp")]
+fn run_mcp_server() -> anyhow::Result<()> {
+    let vault_path = std::env::current_dir()?;
+    let runtime = tokio::runtime::Runtime::new()?;
+    runtime.block_on(mcp::run_mcp_server(vault_path))
+}
+
+#[cfg(feature = "mcp")]
+fn print_mcp_install_instructions() {
+    use colored::Colorize;
+
+    let vault_path = std::env::current_dir()
+        .map(|p| p.to_string_lossy().to_string())
+        .unwrap_or_else(|_| "/path/to/your/vault".to_string());
+
+    println!("{}", "Elysium MCP Server Installation Guide".bold().cyan());
+    println!();
+    println!("Add the following to your Claude configuration:");
+    println!();
+    println!("{}", "For Claude Desktop (~/.config/claude/claude_desktop_config.json):".dimmed());
+    println!(r#"{{
+  "mcpServers": {{
+    "elysium": {{
+      "command": "npx",
+      "args": ["elysium-mcp"],
+      "cwd": "{}"
+    }}
+  }}
+}}"#, vault_path);
+    println!();
+    println!("{}", "Or with direct binary:".dimmed());
+    println!(r#"{{
+  "mcpServers": {{
+    "elysium": {{
+      "command": "elysium",
+      "args": [],
+      "cwd": "{}"
+    }}
+  }}
+}}"#, vault_path);
+    println!();
+    println!("{}", "Available tools:".bold());
+    println!("  • {} - Semantic search using gist embeddings", "vault_search".green());
+    println!("  • {} - Get full note content", "vault_get_note".green());
+    println!("  • {} - List notes with filters", "vault_list_notes".green());
+    println!("  • {} - Get vault health score", "vault_health".green());
+    println!("  • {} - Get vault status summary", "vault_status".green());
+    println!("  • {} - Run policy compliance audit", "vault_audit".green());
+}

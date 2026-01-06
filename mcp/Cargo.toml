@@ -1,0 +1,71 @@
+[package]
+name = "elysium-mcp"
+version = "0.1.0"
+edition = "2021"
+description = "MCP server for Obsidian-based Second Brain with AI-powered semantic search"
+authors = ["junejae"]
+license = "MIT"
+repository = "https://github.com/junejae/elysium"
+homepage = "https://github.com/junejae/elysium"
+keywords = ["mcp", "obsidian", "semantic-search", "second-brain", "ai"]
+categories = ["command-line-utilities", "text-processing"]
+readme = "README.md"
+
+[lib]
+name = "elysium_mcp"
+path = "src/lib.rs"
+
+[[bin]]
+name = "elysium"
+path = "src/main.rs"
+
+[dependencies]
+# CLI
+clap = { version = "4.5", features = ["derive"] }
+
+# Serialization
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+serde_yaml = "0.9"
+
+# Regex
+regex = "1.10"
+lazy_static = "1.4"
+
+# File system
+walkdir = "2.5"
+glob = "0.3"
+
+# Time
+chrono = { version = "0.4", features = ["serde"] }
+
+# Error handling
+anyhow = "1.0"
+thiserror = "1.0"
+
+# Output formatting
+colored = "2.1"
+unicode-width = "0.2"
+
+# Async runtime (for MCP server)
+tokio = { version = "1.35", features = ["rt-multi-thread", "macros", "sync", "io-std"], optional = true }
+
+# SQLite for vector storage and FTS
+rusqlite = { version = "0.32", features = ["bundled"] }
+
+# File watching
+notify = { version = "6.1", optional = true }
+
+# MCP Server
+rmcp = { version = "0.12", features = ["server", "transport-io"], optional = true }
+schemars = { version = "1.0", optional = true }
+
+[features]
+default = ["mcp"]
+watch = ["notify"]
+mcp = ["tokio", "rmcp", "schemars"]
+
+[profile.release]
+lto = true
+codegen-units = 1
+strip = true

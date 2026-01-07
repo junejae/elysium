@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-01-07
+
 ### Changed
 - **BREAKING**: Removed folder structure management entirely
   - No longer creates/enforces Notes/, Projects/, Archive/ folders
@@ -15,6 +17,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Folder location is now 100% user's choice
 - Simplified `.elysium.json` config - removed `folders` section
 - Simplified `vault_status` output - shows total note count only
+- **Plugin**: Major refactoring
+  - ElysiumConfig: Added validation and migration support
+  - Indexer: Improved error handling
+  - MigrationEngine: v2 compatibility
+  - IndexedDB storage initialization fixes
+  - SetupWizard UI for first-time configuration
 
 ### Added
 - `vault_create_note` MCP tool - creates note at vault root with frontmatter
@@ -22,6 +30,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `processing_guide` in `vault_get_inbox` response - helps AI process inbox items
 - Quick Capture command in Obsidian plugin (`Cmd+Shift+N`)
 - Quick Capture modal UI with text input
+- Setup Wizard for plugin first-run experience
 
 ### Removed
 - Folder-type validation in audit (notes can live anywhere)

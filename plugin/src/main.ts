@@ -332,6 +332,19 @@ export default class ElysiumPlugin extends Plugin {
       },
       hotkeys: [{ modifiers: ['Mod', 'Shift'], key: 'i' }],
     });
+
+    this.addCommand({
+      id: 'elysium-quick-capture',
+      name: 'Quick Capture',
+      callback: () => {
+        if (!this.elysiumConfig.isInboxEnabled()) {
+          new Notice('Inbox is disabled in settings');
+          return;
+        }
+        new QuickCaptureModal(this.app, this).open();
+      },
+      hotkeys: [{ modifiers: ['Mod', 'Shift'], key: 'n' }],
+    });
   }
 
   private testWasm() {
@@ -1190,5 +1203,72 @@ class WikilinkSuggest extends EditorSuggest<WikilinkSuggestion> {
       context.start,
       context.end
     );
+  }
+}
+
+class QuickCaptureModal extends Modal {
+  plugin: ElysiumPlugin;
+  textArea: HTMLTextAreaElement;
+
+  constructor(app: App, plugin: ElysiumPlugin) {
+    super(app);
+    this.plugin = plugin;
+  }
+
+  onOpen() {
+    const { contentEl } = this;
+    contentEl.empty();
+    contentEl.addClass('elysium-quick-capture-modal');
+
+    contentEl.createEl('h2', { text: 'Quick Capture' });
+
+    this.textArea = contentEl.createEl('textarea', {
+      cls: 'elysium-quick-capture-input',
+      attr: { placeholder: 'Type your memo here...' }
+    });
+    this.textArea.focus();
+
+    const buttonContainer = contentEl.createDiv({ cls: 'elysium-quick-capture-buttons' });
+    
+    const cancelBtn = buttonContainer.createEl('button', { text: 'Cancel' });
+    cancelBtn.addEventListener('click', () => this.close());
+
+    const saveBtn = buttonContainer.createEl('button', { text: 'Save to Inbox', cls: 'mod-cta' });
+    saveBtn.addEventListener('click', () => this.save());
+
+    this.textArea.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+        e.preventDefault();
+        this.save();
+      }
+    });
+  }
+
+  async save() {
+    const content = this.textArea.value.trim();
+    if (!content) {
+      new Notice('Nothing to save');
+      return;
+    }
+
+    const inboxPath = this.plugin.elysiumConfig.getInboxPath();
+    const file = this.app.vault.getAbstractFileByPath(inboxPath);
+    
+    const separator = '\n---\n\n';
+    const newContent = separator + content;
+
+    if (file && file instanceof TFile) {
+      const existing = await this.app.vault.read(file);
+      await this.app.vault.modify(file, existing + newContent);
+    } else {
+      await this.app.vault.create(inboxPath, content);
+    }
+
+    new Notice('Saved to inbox');
+    this.close();
+  }
+
+  onClose() {
+    this.contentEl.empty();
   }
 }

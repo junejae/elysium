@@ -94,7 +94,32 @@ fn default_gist_source() -> String {
     "ai".to_string()
 }
 
-/// Audit check result for JSON output
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct CreateNoteParams {
+    #[schemars(description = "Note title (will be used as filename)")]
+    pub title: String,
+    #[schemars(description = "Note content (markdown)")]
+    pub content: String,
+    #[schemars(description = "Note type: note, term, project, log")]
+    #[serde(default)]
+    pub note_type: Option<String>,
+    #[schemars(description = "Note area: work, tech, life, career, learning, reference")]
+    #[serde(default)]
+    pub area: Option<String>,
+    #[schemars(description = "Tags (comma-separated or array)")]
+    #[serde(default)]
+    pub tags: Option<String>,
+    #[schemars(description = "Gist summary (2-3 sentences)")]
+    #[serde(default)]
+    pub gist: Option<String>,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct QuickCaptureParams {
+    #[schemars(description = "Memo content to append to inbox")]
+    pub content: String,
+}
+
 #[derive(Debug, Serialize)]
 struct AuditCheckJson {
     id: String,
@@ -425,10 +450,6 @@ impl VaultService {
         checks.push(wikilinks_check);
 
         if !quick {
-            // Folder-type match check
-            let folder_type_check = self.check_folder_type(&notes, verbose);
-            checks.push(folder_type_check);
-
             // Gist coverage check
             let gist_check = self.check_gist(&notes, verbose);
             checks.push(gist_check);
@@ -460,20 +481,40 @@ impl VaultService {
         Ok(CallToolResult::success(vec![Content::text(output)]))
     }
 
-    /// Get inbox file content for AI processing
     #[tool(
-        description = "Get the content of the inbox file for processing. Returns the raw content of the quick-capture inbox file."
+        description = "Get the content of the inbox file for AI processing. Returns content and processing instructions."
     )]
     async fn vault_get_inbox(&self) -> Result<CallToolResult, McpError> {
         let vault_paths = self.get_vault_paths();
         let inbox_path = vault_paths.config.resolve_paths(&self.vault_path).inbox;
+        let schema = &vault_paths.config.schema;
+
+        let processing_guide = serde_json::json!({
+            "instructions": [
+                "Parse each memo separated by '---'",
+                "For each memo, determine: new note, append to existing, or discard",
+                "Create notes at vault root using vault_create_note",
+                "After all processing, call vault_clear_inbox"
+            ],
+            "schema": {
+                "required_fields": ["type", "status", "area", "gist"],
+                "type_values": schema.types,
+                "status_values": schema.statuses,
+                "area_values": schema.areas
+            },
+            "naming": {
+                "log_notes": "YYYY-MM-DD title.md (for type=log)",
+                "regular_notes": "Title.md"
+            }
+        });
 
         if !inbox_path.exists() {
             return Ok(CallToolResult::success(vec![Content::text(
                 serde_json::json!({
                     "exists": false,
                     "path": inbox_path.to_string_lossy(),
-                    "content": null
+                    "content": null,
+                    "processing_guide": processing_guide
                 })
                 .to_string(),
             )]));
@@ -487,7 +528,8 @@ impl VaultService {
             "path": inbox_path.to_string_lossy(),
             "content": content,
             "size": content.len(),
-            "lines": content.lines().count()
+            "lines": content.lines().count(),
+            "processing_guide": processing_guide
         });
 
         Ok(CallToolResult::success(vec![Content::text(
@@ -627,6 +669,95 @@ impl VaultService {
             )])),
         }
     }
+
+    #[tool(
+        description = "Create a new note in the vault root. Generates YAML frontmatter automatically."
+    )]
+    async fn vault_create_note(
+        &self,
+        params: Parameters<CreateNoteParams>,
+    ) -> Result<CallToolResult, McpError> {
+        let title = &params.0.title;
+        let filename = format!("{}.md", title);
+        let note_path = self.vault_path.join(&filename);
+
+        if note_path.exists() {
+            return Ok(CallToolResult::success(vec![Content::text(
+                serde_json::json!({
+                    "success": false,
+                    "error": format!("Note already exists: {}", filename)
+                })
+                .to_string(),
+            )]));
+        }
+
+        let mut frontmatter = String::from("---\n");
+        
+        if let Some(t) = &params.0.note_type {
+            frontmatter.push_str(&format!("type: {}\n", t));
+        }
+        frontmatter.push_str("status: active\n");
+        if let Some(a) = &params.0.area {
+            frontmatter.push_str(&format!("area: {}\n", a));
+        }
+        if let Some(g) = &params.0.gist {
+            frontmatter.push_str(&format!("gist: >\n  {}\n", g));
+            frontmatter.push_str("gist_source: ai\n");
+            frontmatter.push_str(&format!("gist_date: {}\n", chrono::Local::now().format("%Y-%m-%d")));
+        }
+        if let Some(tags) = &params.0.tags {
+            let tag_list: Vec<&str> = tags.split(',').map(|t| t.trim()).collect();
+            frontmatter.push_str(&format!("tags: [{}]\n", tag_list.join(", ")));
+        }
+        frontmatter.push_str("---\n\n");
+
+        let full_content = format!("{}# {}\n\n{}", frontmatter, title, params.0.content);
+
+        std::fs::write(&note_path, &full_content).map_err(|e| {
+            McpError::internal_error(format!("Failed to create note: {}", e), None)
+        })?;
+
+        Ok(CallToolResult::success(vec![Content::text(
+            serde_json::json!({
+                "success": true,
+                "path": note_path.to_string_lossy(),
+                "title": title
+            })
+            .to_string(),
+        )]))
+    }
+
+    #[tool(
+        description = "Append a memo to the inbox file for later processing."
+    )]
+    async fn vault_quick_capture(
+        &self,
+        params: Parameters<QuickCaptureParams>,
+    ) -> Result<CallToolResult, McpError> {
+        let vault_paths = self.get_vault_paths();
+        let inbox_path = vault_paths.config.resolve_paths(&self.vault_path).inbox;
+
+        let separator = "\n---\n\n";
+        let new_content = format!("{}{}", separator, params.0.content);
+
+        let mut file = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(&inbox_path)
+            .map_err(|e| McpError::internal_error(format!("Failed to open inbox: {}", e), None))?;
+
+        use std::io::Write;
+        file.write_all(new_content.as_bytes())
+            .map_err(|e| McpError::internal_error(format!("Failed to write to inbox: {}", e), None))?;
+
+        Ok(CallToolResult::success(vec![Content::text(
+            serde_json::json!({
+                "success": true,
+                "message": "Memo added to inbox"
+            })
+            .to_string(),
+        )]))
+    }
 }
 
 impl VaultService {
@@ -736,39 +867,6 @@ impl VaultService {
         AuditCheckJson {
             id: "wikilinks".to_string(),
             name: "Wikilinks".to_string(),
-            status: if errors.is_empty() { "pass" } else { "fail" }.to_string(),
-            errors: errors.len(),
-            details: None,
-            error_list: if verbose && !errors.is_empty() {
-                Some(errors)
-            } else {
-                None
-            },
-        }
-    }
-
-    fn check_folder_type(
-        &self,
-        notes: &[crate::core::note::Note],
-        verbose: bool,
-    ) -> AuditCheckJson {
-        let mut errors = Vec::new();
-        for note in notes {
-            if !note.check_folder_type_match() {
-                errors.push(AuditErrorJson {
-                    note: note.name.clone(),
-                    message: format!(
-                        "Type '{}' in folder '{}'",
-                        note.note_type().unwrap_or("none"),
-                        note.folder()
-                    ),
-                });
-            }
-        }
-
-        AuditCheckJson {
-            id: "folder_type".to_string(),
-            name: "Folder-Type Match".to_string(),
             status: if errors.is_empty() { "pass" } else { "fail" }.to_string(),
             errors: errors.len(),
             details: None,

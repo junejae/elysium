@@ -4,6 +4,7 @@ use std::path::{Path, PathBuf};
 
 use anyhow::Result;
 use chrono::{DateTime, Local};
+use walkdir::WalkDir;
 
 use super::frontmatter::Frontmatter;
 use super::paths::VaultPaths;
@@ -44,14 +45,6 @@ impl Note {
         })
     }
 
-    pub fn folder(&self) -> &str {
-        self.path
-            .parent()
-            .and_then(|p| p.file_name())
-            .and_then(|s| s.to_str())
-            .unwrap_or("")
-    }
-
     pub fn validate_schema(&self) -> Vec<SchemaViolation> {
         match &self.frontmatter {
             Some(fm) => fm.validate(),
@@ -59,7 +52,6 @@ impl Note {
         }
     }
 
-    /// Validate schema using configurable validator
     pub fn validate_schema_with_config(&self, validator: &SchemaValidator) -> Vec<SchemaViolation> {
         match &self.frontmatter {
             Some(fm) => fm.validate_with_config(validator),
@@ -93,36 +85,33 @@ impl Note {
     pub fn gist(&self) -> Option<&str> {
         self.frontmatter.as_ref()?.gist.as_deref()
     }
+}
 
-    pub fn check_folder_type_match(&self) -> bool {
-        let folder = self.folder();
-        let note_type = self.note_type();
-        let status = self.status();
-
-        match (note_type, status) {
-            (Some("project"), Some("archived")) => folder == "Archive",
-            (Some("project"), _) => folder == "Projects",
-            (Some("note") | Some("term") | Some("log"), _) => folder == "Notes",
-            _ => true,
-        }
-    }
+fn should_exclude_path(path: &Path) -> bool {
+    path.components().any(|c| {
+        c.as_os_str()
+            .to_str()
+            .map(|s| s.starts_with('.'))
+            .unwrap_or(false)
+    })
 }
 
 pub fn collect_all_notes(paths: &VaultPaths) -> Vec<Note> {
     let mut notes = Vec::new();
 
-    for dir in paths.content_dirs() {
-        if !dir.exists() {
+    for entry in WalkDir::new(&paths.root)
+        .into_iter()
+        .filter_map(|e| e.ok())
+    {
+        let path = entry.path();
+        
+        if should_exclude_path(path) {
             continue;
         }
-        if let Ok(entries) = fs::read_dir(dir) {
-            for entry in entries.flatten() {
-                let path = entry.path();
-                if path.extension().map(|e| e == "md").unwrap_or(false) {
-                    if let Ok(note) = Note::load(&path) {
-                        notes.push(note);
-                    }
-                }
+        
+        if path.extension().map(|e| e == "md").unwrap_or(false) {
+            if let Ok(note) = Note::load(path) {
+                notes.push(note);
             }
         }
     }
@@ -134,18 +123,19 @@ pub fn collect_all_notes(paths: &VaultPaths) -> Vec<Note> {
 pub fn collect_note_names(paths: &VaultPaths) -> HashSet<String> {
     let mut names = HashSet::new();
 
-    for dir in paths.content_dirs() {
-        if !dir.exists() {
+    for entry in WalkDir::new(&paths.root)
+        .into_iter()
+        .filter_map(|e| e.ok())
+    {
+        let path = entry.path();
+        
+        if should_exclude_path(path) {
             continue;
         }
-        if let Ok(entries) = fs::read_dir(dir) {
-            for entry in entries.flatten() {
-                let path = entry.path();
-                if path.extension().map(|e| e == "md").unwrap_or(false) {
-                    if let Some(stem) = path.file_stem().and_then(|s| s.to_str()) {
-                        names.insert(stem.to_string());
-                    }
-                }
+        
+        if path.extension().map(|e| e == "md").unwrap_or(false) {
+            if let Some(stem) = path.file_stem().and_then(|s| s.to_str()) {
+                names.insert(stem.to_string());
             }
         }
     }

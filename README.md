@@ -8,7 +8,7 @@ MCP server for Obsidian-based Second Brain with AI-powered semantic search.
 - **Schema Validation**: Enforce consistent YAML frontmatter across notes
 - **Wikilink Integrity**: Detect and fix broken internal links
 - **Vault Health**: Score and track note quality over time
-- **Configurable**: Customize folder structure and schema rules per vault
+- **Folder-agnostic**: Your folder structure, your choice - Elysium scans recursively
 
 ## Installation
 
@@ -33,17 +33,12 @@ cargo build --release --features mcp
 export ELYSIUM_VAULT_PATH="/path/to/your/vault"
 ```
 
-2. **Generate config file** (optional but recommended):
+2. **Generate config file** (optional):
 ```bash
 elysium init --config
 ```
 
-3. **Initialize folder structure**:
-```bash
-elysium init --create
-```
-
-4. **Build search index**:
+3. **Build search index**:
 ```bash
 elysium index
 ```
@@ -73,42 +68,21 @@ This creates `.elysium.json` with customizable settings:
 ```json
 {
   "version": 1,
-  "folders": {
-    "notes": "Notes",
-    "projects": "Projects",
-    "archive": "Archive",
-    "system": "_system",
-    "templates": "_system/Templates",
-    "attachments": "_system/Attachments",
-    "inbox": "inbox.md"
-  },
   "schema": {
     "types": ["note", "term", "project", "log"],
     "statuses": ["active", "done", "archived"],
     "areas": ["work", "tech", "life", "career", "learning", "reference"],
+    "required_fields": ["type", "status", "area", "gist"],
     "max_tags": 5,
     "lowercase_tags": true,
-    "allow_hierarchical_tags": false,
-    "required_fields": ["type", "status", "area", "gist"]
+    "allow_hierarchical_tags": false
   },
   "features": {
-    "semantic_search": true,
-    "wikilink_validation": true
+    "inbox": "inbox.md",
+    "wikilinks": true
   }
 }
 ```
-
-#### Folder Configuration
-
-| Field | Default | Description |
-|-------|---------|-------------|
-| `notes` | `Notes` | Folder for note, term, and log types |
-| `projects` | `Projects` | Folder for active projects |
-| `archive` | `Archive` | Folder for completed/archived projects |
-| `system` | `_system` | Folder for system files |
-| `templates` | `_system/Templates` | Folder for note templates |
-| `attachments` | `_system/Attachments` | Folder for media files |
-| `inbox` | `inbox.md` | Quick capture file path |
 
 #### Schema Configuration
 
@@ -117,19 +91,25 @@ This creates `.elysium.json` with customizable settings:
 | `types` | `["note", "term", "project", "log"]` | Valid note type values |
 | `statuses` | `["active", "done", "archived"]` | Valid status values |
 | `areas` | `["work", "tech", ...]` | Valid area values |
+| `required_fields` | `["type", "status", "area", "gist"]` | Required frontmatter fields |
 | `max_tags` | `5` | Maximum tags per note |
 | `lowercase_tags` | `true` | Require lowercase tags |
 | `allow_hierarchical_tags` | `false` | Allow tags with `/` |
-| `required_fields` | `["type", "status", "area", "gist"]` | Required frontmatter fields |
+
+#### Feature Configuration
+
+| Field | Default | Description |
+|-------|---------|-------------|
+| `inbox` | `inbox.md` | Quick capture file path |
+| `wikilinks` | `true` | Enable wikilink validation |
 
 ## CLI Commands
 
 ### Core Commands
 
 ```bash
-# Initialize vault structure
-elysium init              # Check structure
-elysium init --create     # Create missing folders
+# Initialize config
+elysium init              # Check config
 elysium init --config     # Generate .elysium.json
 
 # Validation
@@ -204,6 +184,9 @@ elysium mcp --install
 | `vault_health` | Get vault health score (0-100) |
 | `vault_status` | Get note counts by type/area |
 | `vault_audit` | Run policy compliance audit |
+| `vault_get_inbox` | Get inbox content with processing guide |
+| `vault_create_note` | Create note at vault root with frontmatter |
+| `vault_quick_capture` | Append memo to inbox file |
 
 ### Claude Desktop Configuration
 
@@ -243,19 +226,18 @@ Add to `.mcp.json` in your vault root:
 
 ## Vault Structure
 
-Default folder structure:
+Elysium is **folder-agnostic** - organize your vault however you like. 
+Notes are scanned recursively from vault root (excluding dot-folders like `.obsidian`).
+
+Example structure (your choice):
 
 ```
 vault/
-├── Notes/              # All notes (note, term, log types)
-├── Projects/           # Active projects
-├── Archive/            # Completed projects
-├── _system/
-│   ├── Dashboards/     # Dataview queries
-│   ├── Templates/      # Note templates
-│   └── Attachments/    # Media files
-├── .opencode/          # AI agent configuration
-├── inbox.md            # Quick capture
+├── Notes/              # Optional - organize however you like
+├── Projects/           # Optional
+├── Archive/            # Optional
+├── _system/            # Optional - dashboards, templates
+├── inbox.md            # Quick capture (configurable path)
 └── .elysium.json       # Config (optional)
 ```
 
@@ -275,6 +257,31 @@ tags: [lowercase, flat, max-five]
 ---
 ```
 
+## Obsidian Plugin
+
+The Elysium plugin adds vault management features to Obsidian:
+
+### Features
+
+- **Status Bar**: Shows vault health score
+- **Quick Capture**: `Cmd+Shift+N` - quickly add memo to inbox
+- **Semantic Search**: Search by meaning, not just keywords
+- **Tag Cloud**: Visual tag browser
+
+### Installation
+
+1. Build plugin:
+```bash
+cd plugin && npm run build
+```
+
+2. Copy to vault:
+```bash
+cp main.js manifest.json styles.css /path/to/vault/.obsidian/plugins/elysium/
+```
+
+3. Enable in Obsidian: Settings → Community plugins → Elysium
+
 ## Technical Details
 
 - **Embeddings**: HTP (Harmonic Token Projection) - local, no API required
@@ -293,6 +300,7 @@ elysium/
 │   │   ├── mcp/        # MCP server implementation
 │   │   └── search/     # Embedding and vector search
 │   └── Cargo.toml
+├── plugin/             # Obsidian plugin (TypeScript)
 ├── npm/                # npm wrapper package
 └── .github/workflows/  # CI/CD
 ```
@@ -300,21 +308,17 @@ elysium/
 ## Development
 
 ```bash
-# Build debug
+# MCP Server
 cd mcp
 cargo build --features mcp
-
-# Build release
-cargo build --release --features mcp
-
-# Run tests
 cargo test
+cargo fmt && cargo clippy
 
-# Format code
-cargo fmt
-
-# Lint
-cargo clippy
+# Plugin
+cd plugin
+npm install
+npm run build
+npm run dev  # Watch mode
 ```
 
 ## License

@@ -49,7 +49,7 @@ pub fn run(query: &str, gist_only: bool, limit: Option<usize>) -> Result<()> {
         }
 
         if matched {
-            results.push((note.name.clone(), note.folder().to_string(), match_context));
+            results.push((note.name.clone(), match_context));
         }
     }
 
@@ -66,8 +66,8 @@ pub fn run(query: &str, gist_only: bool, limit: Option<usize>) -> Result<()> {
     if results_to_show.is_empty() {
         println!("{}", "No matches found.".yellow());
     } else {
-        for (name, folder, context) in results_to_show {
-            println!("{} [{}]", name.cyan(), folder);
+        for (name, context) in results_to_show {
+            println!("{}", name.cyan());
             println!("  {}", context.dimmed());
             println!();
         }

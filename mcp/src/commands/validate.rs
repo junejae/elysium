@@ -10,7 +10,6 @@ struct ValidationResult {
     total_files: usize,
     schema_errors: usize,
     broken_wikilinks: usize,
-    folder_mismatches: usize,
     files_with_errors: Vec<FileError>,
 }
 
@@ -29,7 +28,6 @@ pub fn run(schema_only: bool, wikilinks_only: bool, json: bool) -> Result<()> {
         total_files: notes.len(),
         schema_errors: 0,
         broken_wikilinks: 0,
-        folder_mismatches: 0,
         files_with_errors: Vec::new(),
     };
 
@@ -56,18 +54,6 @@ pub fn run(schema_only: bool, wikilinks_only: bool, json: bool) -> Result<()> {
             }
         }
 
-        if check_all {
-            if !note.check_folder_type_match() {
-                errors.push(format!(
-                    "[FOLDER] type='{}' status='{}' should not be in {}",
-                    note.note_type().unwrap_or("?"),
-                    note.status().unwrap_or("?"),
-                    note.folder()
-                ));
-                result.folder_mismatches += 1;
-            }
-        }
-
         if !errors.is_empty() {
             result.files_with_errors.push(FileError {
                 file: note.name.clone(),
@@ -82,7 +68,7 @@ pub fn run(schema_only: bool, wikilinks_only: bool, json: bool) -> Result<()> {
         print_report(&result);
     }
 
-    if result.schema_errors > 0 || result.broken_wikilinks > 0 || result.folder_mismatches > 0 {
+    if result.schema_errors > 0 || result.broken_wikilinks > 0 {
         std::process::exit(1);
     }
 
@@ -128,14 +114,6 @@ fn print_report(result: &ValidationResult) {
             result.broken_wikilinks.to_string().red()
         } else {
             result.broken_wikilinks.to_string().green()
-        }
-    );
-    println!(
-        "  Folder mismatches: {}",
-        if result.folder_mismatches > 0 {
-            result.folder_mismatches.to_string().red()
-        } else {
-            result.folder_mismatches.to_string().green()
         }
     );
 }

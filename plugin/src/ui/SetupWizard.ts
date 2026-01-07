@@ -3,7 +3,7 @@ import { VaultScanner, VaultAnalysis, SchemaRecommendation } from '../config/Vau
 import { MigrationEngine, MigrationPlan, MigrationProgress } from '../migration/MigrationEngine';
 import { ElysiumConfig, GistConfig } from '../config/ElysiumConfig';
 
-type WizardStep = 'welcome' | 'analyzing' | 'review' | 'mapping' | 'preview' | 'migrating' | 'complete';
+type WizardStep = 'welcome' | 'analyzing' | 'review' | 'mapping' | 'preview' | 'migrating' | 'inbox' | 'complete';
 
 const GIST_DESCRIPTION = 'Gist is a short summary (2-3 sentences) stored in frontmatter. It powers semantic search—finding notes by meaning, not just keywords. Without gist, Elysium falls back to filename-based search.';
 
@@ -17,6 +17,7 @@ export class SetupWizard extends Modal {
   private onComplete: () => void;
   private skipMigration: boolean = false;
   private gistSettings: GistConfig;
+  private inboxPath: string;
 
   constructor(app: App, config: ElysiumConfig, onComplete: () => void) {
     super(app);
@@ -24,6 +25,7 @@ export class SetupWizard extends Modal {
     this.scanner = new VaultScanner(app);
     this.onComplete = onComplete;
     this.gistSettings = { ...config.getGistConfig() };
+    this.inboxPath = config.getInboxPath();
   }
 
   onOpen() {
@@ -57,6 +59,9 @@ export class SetupWizard extends Modal {
         break;
       case 'migrating':
         this.renderMigrating();
+        break;
+      case 'inbox':
+        this.renderInbox();
         break;
       case 'complete':
         this.renderComplete();
@@ -606,6 +611,81 @@ export class SetupWizard extends Modal {
       await this.config.save();
     } catch (e) {
       console.error('Failed to save config:', e);
+    }
+
+    this.currentStep = 'inbox';
+    this.renderStep();
+  }
+
+  private renderInbox() {
+    const { contentEl } = this;
+
+    contentEl.createEl('h2', { text: 'Configure Inbox' });
+    
+    const intro = contentEl.createDiv({ cls: 'elysium-wizard-intro' });
+    intro.createEl('p', { 
+      text: 'Inbox is a quick capture file for fleeting notes. Use Cmd+Shift+N to quickly add memos.'
+    });
+
+    const existingFile = this.app.vault.getAbstractFileByPath(this.inboxPath);
+    if (existingFile) {
+      intro.createEl('p', { 
+        text: `✓ Found existing inbox at "${this.inboxPath}"`,
+        cls: 'elysium-wizard-success'
+      });
+    }
+
+    new Setting(contentEl)
+      .setName('Inbox path')
+      .setDesc('Path to inbox file (relative to vault root)')
+      .addText(text => {
+        text.setValue(this.inboxPath);
+        text.setPlaceholder('inbox.md');
+        text.onChange(value => {
+          this.inboxPath = value.trim() || 'inbox.md';
+        });
+      });
+
+    const examples = contentEl.createDiv({ cls: 'elysium-wizard-examples' });
+    examples.createEl('p', { text: 'Examples:', cls: 'label' });
+    const exampleList = examples.createEl('ul');
+    exampleList.createEl('li', { text: 'inbox.md (vault root)' });
+    exampleList.createEl('li', { text: 'Inbox/inbox.md (in Inbox folder)' });
+    exampleList.createEl('li', { text: '_system/inbox.md (in system folder)' });
+
+    const buttonContainer = contentEl.createDiv({ cls: 'elysium-wizard-buttons' });
+
+    const finishBtn = buttonContainer.createEl('button', { 
+      text: 'Finish Setup',
+      cls: 'mod-cta'
+    });
+    finishBtn.addEventListener('click', () => this.saveInboxAndComplete());
+  }
+
+  private async saveInboxAndComplete() {
+    this.config.updateInboxConfig({ 
+      enabled: true, 
+      path: this.inboxPath 
+    });
+
+    try {
+      await this.config.save();
+    } catch (e) {
+      console.error('Failed to save config:', e);
+    }
+
+    const file = this.app.vault.getAbstractFileByPath(this.inboxPath);
+    if (!file) {
+      const parentPath = this.inboxPath.split('/').slice(0, -1).join('/');
+      if (parentPath) {
+        const parentFolder = this.app.vault.getAbstractFileByPath(parentPath);
+        if (!parentFolder) {
+          await this.app.vault.createFolder(parentPath);
+        }
+      }
+      
+      const inboxContent = '# Inbox\n\n> Quick capture space. Process with AI or manually.\n\n---\n\n';
+      await this.app.vault.create(this.inboxPath, inboxContent);
     }
 
     this.currentStep = 'complete';

@@ -37,9 +37,6 @@ pub fn run(quick: bool, json: bool, strict: bool) -> Result<()> {
     checks.push(wikilink_result);
 
     if !quick {
-        let folder_result = check_folder_type(&notes);
-        checks.push(folder_result);
-
         let gist_result = check_gist(&notes);
         checks.push(gist_result);
 
@@ -105,21 +102,6 @@ fn check_wikilinks(
     CheckResult {
         id: "wikilinks".to_string(),
         name: "Wikilinks".to_string(),
-        status: if errors == 0 { "pass" } else { "fail" }.to_string(),
-        errors,
-        details: None,
-    }
-}
-
-fn check_folder_type(notes: &[crate::core::note::Note]) -> CheckResult {
-    let errors = notes
-        .iter()
-        .filter(|n| !n.check_folder_type_match())
-        .count();
-
-    CheckResult {
-        id: "folder_type".to_string(),
-        name: "Folder-Type Match".to_string(),
         status: if errors == 0 { "pass" } else { "fail" }.to_string(),
         errors,
         details: None,

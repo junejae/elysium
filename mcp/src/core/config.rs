@@ -18,9 +18,6 @@ pub struct Config {
     pub version: u32,
 
     #[serde(default)]
-    pub folders: FolderConfig,
-
-    #[serde(default)]
     pub schema: SchemaConfig,
 
     #[serde(default)]
@@ -29,60 +26,6 @@ pub struct Config {
 
 fn default_version() -> u32 {
     CONFIG_VERSION
-}
-
-/// Folder structure configuration
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct FolderConfig {
-    #[serde(default = "default_notes")]
-    pub notes: String,
-
-    #[serde(default = "default_projects")]
-    pub projects: String,
-
-    #[serde(default = "default_archive")]
-    pub archive: String,
-
-    #[serde(default = "default_system")]
-    pub system: String,
-
-    #[serde(default = "default_templates")]
-    pub templates: String,
-
-    #[serde(default = "default_attachments")]
-    pub attachments: String,
-}
-
-fn default_notes() -> String {
-    "Notes".to_string()
-}
-fn default_projects() -> String {
-    "Projects".to_string()
-}
-fn default_archive() -> String {
-    "Archive".to_string()
-}
-fn default_system() -> String {
-    "_system".to_string()
-}
-fn default_templates() -> String {
-    "_system/Templates".to_string()
-}
-fn default_attachments() -> String {
-    "_system/Attachments".to_string()
-}
-
-impl Default for FolderConfig {
-    fn default() -> Self {
-        Self {
-            notes: default_notes(),
-            projects: default_projects(),
-            archive: default_archive(),
-            system: default_system(),
-            templates: default_templates(),
-            attachments: default_attachments(),
-        }
-    }
 }
 
 /// Schema validation configuration
@@ -214,7 +157,6 @@ impl Default for Config {
     fn default() -> Self {
         Self {
             version: CONFIG_VERSION,
-            folders: FolderConfig::default(),
             schema: SchemaConfig::default(),
             features: FeatureConfig::default(),
         }
@@ -268,39 +210,20 @@ impl Config {
         serde_json::to_string_pretty(&Config::default()).unwrap()
     }
 
-    /// Get resolved folder paths based on vault root
+    /// Get resolved paths based on vault root
     pub fn resolve_paths(&self, vault_root: &Path) -> ResolvedPaths {
         ResolvedPaths {
             root: vault_root.to_path_buf(),
-            notes: vault_root.join(&self.folders.notes),
-            projects: vault_root.join(&self.folders.projects),
-            archive: vault_root.join(&self.folders.archive),
-            system: vault_root.join(&self.folders.system),
-            templates: vault_root.join(&self.folders.templates),
-            attachments: vault_root.join(&self.folders.attachments),
             inbox: vault_root.join(&self.features.inbox),
         }
     }
 }
 
-/// Resolved absolute paths for vault folders
+/// Resolved absolute paths for vault
 #[derive(Debug, Clone)]
 pub struct ResolvedPaths {
     pub root: PathBuf,
-    pub notes: PathBuf,
-    pub projects: PathBuf,
-    pub archive: PathBuf,
-    pub system: PathBuf,
-    pub templates: PathBuf,
-    pub attachments: PathBuf,
     pub inbox: PathBuf,
-}
-
-impl ResolvedPaths {
-    /// Get content directories (notes, projects, archive)
-    pub fn content_dirs(&self) -> Vec<&PathBuf> {
-        vec![&self.notes, &self.projects, &self.archive]
-    }
 }
 
 #[cfg(test)]
@@ -311,17 +234,16 @@ mod tests {
     fn test_default_config() {
         let config = Config::default();
         assert_eq!(config.version, 1);
-        assert_eq!(config.folders.notes, "Notes");
         assert_eq!(config.schema.types.len(), 4);
         assert!(config.schema.lowercase_tags);
     }
 
     #[test]
     fn test_parse_partial_config() {
-        let json = r#"{"folders": {"notes": "Zettelkasten"}}"#;
+        let json = r#"{"features": {"inbox": "my-inbox.md"}}"#;
         let config: Config = serde_json::from_str(json).unwrap();
-        assert_eq!(config.folders.notes, "Zettelkasten");
-        assert_eq!(config.folders.projects, "Projects"); // default
+        assert_eq!(config.features.inbox, "my-inbox.md");
+        assert!(config.features.wikilinks);
     }
 
     #[test]

@@ -15,9 +15,7 @@ const INBOX_WARN_THRESHOLD: usize = 10;
 #[derive(Serialize)]
 struct VaultStatus {
     timestamp: String,
-    folder_counts: HashMap<String, usize>,
     total: usize,
-    templates: usize,
     type_distribution: HashMap<String, usize>,
     status_distribution: HashMap<String, usize>,
     area_distribution: HashMap<String, usize>,
@@ -36,14 +34,7 @@ struct Warning {
 pub fn run(brief: bool, json: bool) -> Result<()> {
     let paths = VaultPaths::new();
     let notes = collect_all_notes(&paths);
-
-    let mut folder_counts = HashMap::new();
-    folder_counts.insert("Notes".to_string(), count_files(&paths.notes));
-    folder_counts.insert("Projects".to_string(), count_files(&paths.projects));
-    folder_counts.insert("Archive".to_string(), count_files(&paths.archive));
-
-    let total: usize = folder_counts.values().sum();
-    let templates = count_files(&paths.templates);
+    let total = notes.len();
 
     let mut type_dist: HashMap<String, usize> = HashMap::new();
     let mut status_dist: HashMap<String, usize> = HashMap::new();
@@ -92,9 +83,7 @@ pub fn run(brief: bool, json: bool) -> Result<()> {
 
     let status = VaultStatus {
         timestamp: Local::now().to_rfc3339(),
-        folder_counts,
         total,
-        templates,
         type_distribution: type_dist,
         status_distribution: status_dist,
         area_distribution: area_dist,
@@ -116,20 +105,6 @@ pub fn run(brief: bool, json: bool) -> Result<()> {
     Ok(())
 }
 
-fn count_files(path: &std::path::Path) -> usize {
-    if !path.exists() {
-        return 0;
-    }
-    fs::read_dir(path)
-        .map(|entries| {
-            entries
-                .filter_map(|e| e.ok())
-                .filter(|e| e.path().extension().map(|ext| ext == "md").unwrap_or(false))
-                .count()
-        })
-        .unwrap_or(0)
-}
-
 fn count_inbox_memos(inbox_path: &std::path::Path) -> usize {
     if !inbox_path.exists() {
         return 0;
@@ -143,15 +118,8 @@ fn print_status(status: &VaultStatus, brief: bool) {
     println!("{}", "Vault Status".bold());
     println!("{}", "=".repeat(50));
     println!();
-    println!("확인 시간: {}", status.timestamp);
-    println!();
-
-    println!("{}", "폴더별 노트 수".cyan());
-    println!("{}", "-".repeat(30));
-    for (folder, count) in &status.folder_counts {
-        println!("   {:<12} {:>4}", folder, count);
-    }
-    println!("   {:<12} {:>4}", "Total", status.total);
+    println!("Timestamp: {}", status.timestamp);
+    println!("Total notes: {}", status.total);
     println!();
 
     if brief {
@@ -159,14 +127,14 @@ fn print_status(status: &VaultStatus, brief: bool) {
         println!("Type: {:?}", status.type_distribution);
         println!("Area: {:?}", status.area_distribution);
     } else {
-        print_distribution("Status 분포", &status.status_distribution, status.total);
-        print_distribution("Type 분포", &status.type_distribution, status.total);
-        print_distribution("Area 분포", &status.area_distribution, status.total);
+        print_distribution("Status Distribution", &status.status_distribution, status.total);
+        print_distribution("Type Distribution", &status.type_distribution, status.total);
+        print_distribution("Area Distribution", &status.area_distribution, status.total);
     }
 
     if !status.warnings.is_empty() {
         println!();
-        println!("{}", "⚠️  주의 필요 항목".yellow());
+        println!("{}", "⚠️  Warnings".yellow());
         println!("{}", "-".repeat(30));
         for w in &status.warnings {
             println!("   {}: {}", w.target, w.message);
@@ -175,9 +143,6 @@ fn print_status(status: &VaultStatus, brief: bool) {
 
     println!();
     println!("{}", "=".repeat(50));
-    if status.templates > 0 {
-        println!("*Templates/ 제외 ({}개)*", status.templates);
-    }
 }
 
 fn print_distribution(title: &str, dist: &HashMap<String, usize>, total: usize) {

@@ -27,10 +27,10 @@ enum Commands {
 
     // ===== Core Commands =====
     Init {
-        #[arg(long, help = "Create missing folders")]
-        create: bool,
         #[arg(long, help = "Generate .elysium.json config file")]
         config: bool,
+        #[arg(long, help = "Path to inbox file (default: inbox.md)")]
+        inbox: Option<String>,
     },
     Validate {
         #[arg(long, help = "Check YAML schema only")]
@@ -139,7 +139,7 @@ fn main() -> anyhow::Result<()> {
         }
 
         // Core commands
-        Some(Commands::Init { create, config }) => commands::init::run(create, config),
+        Some(Commands::Init { config, inbox }) => commands::init::run(config, inbox),
         Some(Commands::Validate {
             schema,
             wikilinks,

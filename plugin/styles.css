@@ -631,3 +631,39 @@
   margin-bottom: 8px;
   color: var(--text-muted);
 }
+
+.elysium-quick-capture-modal {
+  padding: 20px;
+  min-width: 400px;
+}
+
+.elysium-quick-capture-modal h2 {
+  margin-bottom: 16px;
+}
+
+.elysium-quick-capture-input {
+  width: 100%;
+  min-height: 150px;
+  padding: 12px;
+  font-size: 14px;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 8px;
+  background: var(--background-primary);
+  color: var(--text-normal);
+  resize: vertical;
+  font-family: inherit;
+  line-height: 1.5;
+}
+
+.elysium-quick-capture-input:focus {
+  outline: none;
+  border-color: var(--interactive-accent);
+  box-shadow: 0 0 0 2px var(--interactive-accent-hover);
+}
+
+.elysium-quick-capture-buttons {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 16px;
+}

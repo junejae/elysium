@@ -16,15 +16,21 @@ pub fn run(config: bool, inbox: Option<String>) -> Result<()> {
     println!("{}", "=".repeat(50));
     println!();
     println!("Usage:");
-    println!("  {} - Create config with default inbox (inbox.md)", "elysium init --config".cyan());
-    println!("  {} - Create config with custom inbox path", "elysium init --inbox <path>".cyan());
+    println!(
+        "  {} - Create config with default inbox (inbox.md)",
+        "elysium init --config".cyan()
+    );
+    println!(
+        "  {} - Create config with custom inbox path",
+        "elysium init --inbox <path>".cyan()
+    );
     println!();
     println!("Examples:");
     println!("  elysium init --config");
     println!("  elysium init --inbox \"Inbox/inbox.md\"");
     println!("  elysium init --config --inbox \"quick-capture.md\"");
     println!();
-    
+
     Ok(())
 }
 
@@ -48,7 +54,7 @@ fn run_config_init(inbox: Option<String>) -> Result<()> {
     }
 
     config.save(&vault_root)?;
-    
+
     if config_path.exists() {
         println!("{} Updated {}", "✓".green(), config_path.display());
     } else {
@@ -63,12 +69,17 @@ fn run_config_init(inbox: Option<String>) -> Result<()> {
                 println!("{} Created directory {}", "✓".green(), parent.display());
             }
         }
-        
-        let inbox_content = "# Inbox\n\n> Quick capture space. Process with AI or manually.\n\n---\n\n";
+
+        let inbox_content =
+            "# Inbox\n\n> Quick capture space. Process with AI or manually.\n\n---\n\n";
         fs::write(&inbox_path, inbox_content)?;
         println!("{} Created {}", "✓".green(), inbox_path.display());
     } else {
-        println!("{} Inbox already exists: {}", "→".blue(), inbox_path.display());
+        println!(
+            "{} Inbox already exists: {}",
+            "→".blue(),
+            inbox_path.display()
+        );
     }
 
     println!();

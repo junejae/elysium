@@ -692,7 +692,7 @@ impl VaultService {
         }
 
         let mut frontmatter = String::from("---\n");
-        
+
         if let Some(t) = &params.0.note_type {
             frontmatter.push_str(&format!("type: {}\n", t));
         }
@@ -703,7 +703,10 @@ impl VaultService {
         if let Some(g) = &params.0.gist {
             frontmatter.push_str(&format!("gist: >\n  {}\n", g));
             frontmatter.push_str("gist_source: ai\n");
-            frontmatter.push_str(&format!("gist_date: {}\n", chrono::Local::now().format("%Y-%m-%d")));
+            frontmatter.push_str(&format!(
+                "gist_date: {}\n",
+                chrono::Local::now().format("%Y-%m-%d")
+            ));
         }
         if let Some(tags) = &params.0.tags {
             let tag_list: Vec<&str> = tags.split(',').map(|t| t.trim()).collect();
@@ -713,9 +716,8 @@ impl VaultService {
 
         let full_content = format!("{}# {}\n\n{}", frontmatter, title, params.0.content);
 
-        std::fs::write(&note_path, &full_content).map_err(|e| {
-            McpError::internal_error(format!("Failed to create note: {}", e), None)
-        })?;
+        std::fs::write(&note_path, &full_content)
+            .map_err(|e| McpError::internal_error(format!("Failed to create note: {}", e), None))?;
 
         Ok(CallToolResult::success(vec![Content::text(
             serde_json::json!({
@@ -727,9 +729,7 @@ impl VaultService {
         )]))
     }
 
-    #[tool(
-        description = "Append a memo to the inbox file for later processing."
-    )]
+    #[tool(description = "Append a memo to the inbox file for later processing.")]
     async fn vault_quick_capture(
         &self,
         params: Parameters<QuickCaptureParams>,
@@ -747,8 +747,9 @@ impl VaultService {
             .map_err(|e| McpError::internal_error(format!("Failed to open inbox: {}", e), None))?;
 
         use std::io::Write;
-        file.write_all(new_content.as_bytes())
-            .map_err(|e| McpError::internal_error(format!("Failed to write to inbox: {}", e), None))?;
+        file.write_all(new_content.as_bytes()).map_err(|e| {
+            McpError::internal_error(format!("Failed to write to inbox: {}", e), None)
+        })?;
 
         Ok(CallToolResult::success(vec![Content::text(
             serde_json::json!({

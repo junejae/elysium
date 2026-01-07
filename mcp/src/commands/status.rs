@@ -127,7 +127,11 @@ fn print_status(status: &VaultStatus, brief: bool) {
         println!("Type: {:?}", status.type_distribution);
         println!("Area: {:?}", status.area_distribution);
     } else {
-        print_distribution("Status Distribution", &status.status_distribution, status.total);
+        print_distribution(
+            "Status Distribution",
+            &status.status_distribution,
+            status.total,
+        );
         print_distribution("Type Distribution", &status.type_distribution, status.total);
         print_distribution("Area Distribution", &status.area_distribution, status.total);
     }

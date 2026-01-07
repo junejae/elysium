@@ -99,16 +99,13 @@ fn should_exclude_path(path: &Path) -> bool {
 pub fn collect_all_notes(paths: &VaultPaths) -> Vec<Note> {
     let mut notes = Vec::new();
 
-    for entry in WalkDir::new(&paths.root)
-        .into_iter()
-        .filter_map(|e| e.ok())
-    {
+    for entry in WalkDir::new(&paths.root).into_iter().filter_map(|e| e.ok()) {
         let path = entry.path();
-        
+
         if should_exclude_path(path) {
             continue;
         }
-        
+
         if path.extension().map(|e| e == "md").unwrap_or(false) {
             if let Ok(note) = Note::load(path) {
                 notes.push(note);
@@ -123,16 +120,13 @@ pub fn collect_all_notes(paths: &VaultPaths) -> Vec<Note> {
 pub fn collect_note_names(paths: &VaultPaths) -> HashSet<String> {
     let mut names = HashSet::new();
 
-    for entry in WalkDir::new(&paths.root)
-        .into_iter()
-        .filter_map(|e| e.ok())
-    {
+    for entry in WalkDir::new(&paths.root).into_iter().filter_map(|e| e.ok()) {
         let path = entry.path();
-        
+
         if should_exclude_path(path) {
             continue;
         }
-        
+
         if path.extension().map(|e| e == "md").unwrap_or(false) {
             if let Some(stem) = path.file_stem().and_then(|s| s.to_str()) {
                 names.insert(stem.to_string());

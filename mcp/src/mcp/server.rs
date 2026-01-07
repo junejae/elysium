@@ -75,6 +75,25 @@ pub struct AuditParams {
     pub verbose: bool,
 }
 
+/// Parameters for vault_update_gist tool
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct UpdateGistParams {
+    /// Note title or path
+    #[schemars(description = "Note title or path to update")]
+    pub note: String,
+    /// New gist content
+    #[schemars(description = "New gist summary (2-3 sentences)")]
+    pub gist: String,
+    /// Gist source (auto, ai, human)
+    #[schemars(description = "Gist source: auto, ai, or human")]
+    #[serde(default = "default_gist_source")]
+    pub source: String,
+}
+
+fn default_gist_source() -> String {
+    "ai".to_string()
+}
+
 /// Audit check result for JSON output
 #[derive(Debug, Serialize)]
 struct AuditCheckJson {
@@ -439,6 +458,217 @@ impl VaultService {
         })?;
 
         Ok(CallToolResult::success(vec![Content::text(output)]))
+    }
+
+    /// Get inbox file content for AI processing
+    #[tool(
+        description = "Get the content of the inbox file for processing. Returns the raw content of the quick-capture inbox file."
+    )]
+    async fn vault_get_inbox(&self) -> Result<CallToolResult, McpError> {
+        let vault_paths = self.get_vault_paths();
+        let inbox_path = vault_paths.config.resolve_paths(&self.vault_path).inbox;
+
+        if !inbox_path.exists() {
+            return Ok(CallToolResult::success(vec![Content::text(
+                serde_json::json!({
+                    "exists": false,
+                    "path": inbox_path.to_string_lossy(),
+                    "content": null
+                }).to_string()
+            )]));
+        }
+
+        let content = std::fs::read_to_string(&inbox_path).map_err(|e| {
+            McpError::internal_error(format!("Failed to read inbox: {}", e), None)
+        })?;
+
+        let output = serde_json::json!({
+            "exists": true,
+            "path": inbox_path.to_string_lossy(),
+            "content": content,
+            "size": content.len(),
+            "lines": content.lines().count()
+        });
+
+        Ok(CallToolResult::success(vec![Content::text(
+            serde_json::to_string_pretty(&output).unwrap_or_default()
+        )]))
+    }
+
+    /// Clear inbox file after processing
+    #[tool(
+        description = "Clear the inbox file content after processing. Preserves the file but empties its content."
+    )]
+    async fn vault_clear_inbox(&self) -> Result<CallToolResult, McpError> {
+        let vault_paths = self.get_vault_paths();
+        let inbox_path = vault_paths.config.resolve_paths(&self.vault_path).inbox;
+
+        if !inbox_path.exists() {
+            return Ok(CallToolResult::success(vec![Content::text(
+                "Inbox file does not exist"
+            )]));
+        }
+
+        std::fs::write(&inbox_path, "").map_err(|e| {
+            McpError::internal_error(format!("Failed to clear inbox: {}", e), None)
+        })?;
+
+        Ok(CallToolResult::success(vec![Content::text(
+            serde_json::json!({
+                "success": true,
+                "message": "Inbox cleared"
+            }).to_string()
+        )]))
+    }
+
+    /// Get notes with stale gists (gist_date < file modified time)
+    #[tool(
+        description = "Get list of notes where gist is outdated (gist_date older than file modification time). Useful for AI to identify notes needing gist refresh."
+    )]
+    async fn vault_get_stale_gists(&self) -> Result<CallToolResult, McpError> {
+        let vault_paths = self.get_vault_paths();
+        let notes = collect_all_notes(&vault_paths);
+        
+        let mut stale_notes: Vec<serde_json::Value> = Vec::new();
+
+        let gist_date_re = regex::Regex::new(r"(?m)^gist_date:\s*(\d{4}-\d{2}-\d{2})").unwrap();
+        
+        for note in notes {
+            let gist_date = note.frontmatter.as_ref()
+                .and_then(|fm| gist_date_re.captures(&fm.raw))
+                .and_then(|caps| caps.get(1))
+                .and_then(|m| chrono::NaiveDate::parse_from_str(m.as_str(), "%Y-%m-%d").ok());
+
+            if let Some(gist_date) = gist_date {
+                if let Ok(metadata) = std::fs::metadata(&note.path) {
+                    if let Ok(modified) = metadata.modified() {
+                        let modified_date = chrono::DateTime::<chrono::Local>::from(modified).date_naive();
+                        if gist_date < modified_date {
+                            stale_notes.push(serde_json::json!({
+                                "title": note.name,
+                                "path": note.path.to_string_lossy(),
+                                "gist_date": gist_date.to_string(),
+                                "modified_date": modified_date.to_string(),
+                                "current_gist": note.gist()
+                            }));
+                        }
+                    }
+                }
+            }
+        }
+
+        let output = serde_json::json!({
+            "count": stale_notes.len(),
+            "notes": stale_notes
+        });
+
+        Ok(CallToolResult::success(vec![Content::text(
+            serde_json::to_string_pretty(&output).unwrap_or_default()
+        )]))
+    }
+
+    /// Update gist for a specific note
+    #[tool(
+        description = "Update the gist field for a note. Sets gist, gist_source (auto/ai/human), and gist_date in frontmatter."
+    )]
+    async fn vault_update_gist(
+        &self,
+        params: Parameters<UpdateGistParams>,
+    ) -> Result<CallToolResult, McpError> {
+        let vault_paths = self.get_vault_paths();
+        let notes = collect_all_notes(&vault_paths);
+        let note_name = &params.0.note;
+
+        let found = notes.into_iter().find(|n| {
+            n.name == *note_name
+                || n.path.to_string_lossy().contains(note_name)
+                || n.path.file_stem().map(|s| s.to_string_lossy().to_string())
+                    == Some(note_name.clone())
+        });
+
+        match found {
+            Some(note) => {
+                let content = std::fs::read_to_string(&note.path).map_err(|e| {
+                    McpError::internal_error(format!("Failed to read note: {}", e), None)
+                })?;
+
+                let today = chrono::Local::now().format("%Y-%m-%d").to_string();
+                let new_content = self.update_frontmatter_gist(
+                    &content, 
+                    &params.0.gist, 
+                    &params.0.source,
+                    &today
+                );
+
+                std::fs::write(&note.path, &new_content).map_err(|e| {
+                    McpError::internal_error(format!("Failed to write note: {}", e), None)
+                })?;
+
+                Ok(CallToolResult::success(vec![Content::text(
+                    serde_json::json!({
+                        "success": true,
+                        "note": note.name,
+                        "gist": params.0.gist,
+                        "source": params.0.source,
+                        "date": today
+                    }).to_string()
+                )]))
+            }
+            None => Ok(CallToolResult::success(vec![Content::text(
+                serde_json::json!({
+                    "success": false,
+                    "error": format!("Note not found: {}", note_name)
+                }).to_string()
+            )])),
+        }
+    }
+}
+
+impl VaultService {
+    fn update_frontmatter_gist(&self, content: &str, gist: &str, source: &str, date: &str) -> String {
+        let fm_regex = regex::Regex::new(r"^---\s*\n([\s\S]*?)\n---").unwrap();
+        
+        if let Some(caps) = fm_regex.captures(content) {
+            let fm_content = caps.get(1).map(|m| m.as_str()).unwrap_or("");
+            let after_fm = &content[caps.get(0).unwrap().end()..];
+            
+            let mut new_fm = String::new();
+            let mut gist_added = false;
+            let mut source_added = false;
+            let mut date_added = false;
+            
+            for line in fm_content.lines() {
+                if line.starts_with("gist:") {
+                    new_fm.push_str(&format!("gist: >\n  {}\n", gist));
+                    gist_added = true;
+                } else if line.starts_with("gist_source:") {
+                    new_fm.push_str(&format!("gist_source: {}\n", source));
+                    source_added = true;
+                } else if line.starts_with("gist_date:") {
+                    new_fm.push_str(&format!("gist_date: {}\n", date));
+                    date_added = true;
+                } else if line.starts_with("  ") && gist_added && !line.contains(':') {
+                    continue;
+                } else {
+                    new_fm.push_str(line);
+                    new_fm.push('\n');
+                }
+            }
+            
+            if !gist_added {
+                new_fm.push_str(&format!("gist: >\n  {}\n", gist));
+            }
+            if !source_added {
+                new_fm.push_str(&format!("gist_source: {}\n", source));
+            }
+            if !date_added {
+                new_fm.push_str(&format!("gist_date: {}\n", date));
+            }
+            
+            format!("---\n{}---{}", new_fm, after_fm)
+        } else {
+            format!("---\ngist: >\n  {}\ngist_source: {}\ngist_date: {}\n---\n{}", gist, source, date, content)
+        }
     }
 }
 

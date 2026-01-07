@@ -1,0 +1,31 @@
+{
+  "name": "elysium-obsidian-plugin",
+  "version": "0.1.0",
+  "description": "AI-powered semantic search for Obsidian",
+  "main": "main.js",
+  "scripts": {
+    "dev": "node esbuild.config.mjs",
+    "build": "npm run build:wasm && node esbuild.config.mjs production",
+    "build:wasm": "cd wasm && wasm-pack build --target web --out-dir ../src/wasm-pkg",
+    "build:wasm:release": "cd wasm && wasm-pack build --target web --release --out-dir ../src/wasm-pkg"
+  },
+  "keywords": [
+    "obsidian",
+    "semantic-search",
+    "wasm",
+    "htp",
+    "embeddings"
+  ],
+  "author": "junejae",
+  "license": "MIT",
+  "devDependencies": {
+    "@types/node": "^20.10.0",
+    "@typescript-eslint/eslint-plugin": "^6.0.0",
+    "@typescript-eslint/parser": "^6.0.0",
+    "builtin-modules": "^3.3.0",
+    "esbuild": "^0.19.0",
+    "obsidian": "latest",
+    "tslib": "^2.6.0",
+    "typescript": "^5.3.0"
+  }
+}

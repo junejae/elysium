@@ -3,13 +3,6 @@ import { HnswIndex } from '../wasm-pkg/elysium_wasm';
 import { IndexedDbStorage, NoteRecord } from '../storage/IndexedDbStorage';
 import { ElysiumConfig } from '../config/ElysiumConfig';
 
-export interface FieldNames {
-  type: string;
-  area: string;
-  gist: string;
-  tags: string;
-}
-
 const isExcludedPath = (path: string): boolean => {
   return path.split('/').some(part => part.startsWith('.'));
 };
@@ -18,35 +11,17 @@ export class Indexer {
   private app: App;
   private storage: IndexedDbStorage;
   private index: HnswIndex;
-  private fieldNames: FieldNames;
-  private gistEnabled: boolean;
+  private config: ElysiumConfig | null;
 
   constructor(app: App, storage: IndexedDbStorage, index: HnswIndex, config?: ElysiumConfig) {
     this.app = app;
     this.storage = storage;
     this.index = index;
-    this.gistEnabled = config?.isGistEnabled() ?? false;
-    this.fieldNames = config ? {
-      type: config.getTypeFieldName(),
-      area: config.getAreaFieldName(),
-      gist: config.getGistFieldName(),
-      tags: config.getTagsFieldName(),
-    } : {
-      type: 'type',
-      area: 'area',
-      gist: 'gist',
-      tags: 'tags',
-    };
+    this.config = config ?? null;
   }
 
   updateConfig(config: ElysiumConfig): void {
-    this.gistEnabled = config.isGistEnabled();
-    this.fieldNames = {
-      type: config.getTypeFieldName(),
-      area: config.getAreaFieldName(),
-      gist: config.getGistFieldName(),
-      tags: config.getTagsFieldName(),
-    };
+    this.config = config;
   }
 
   private filterExcludedFiles(files: TFile[]): TFile[] {
@@ -57,7 +32,8 @@ export class Indexer {
     const content = await this.app.vault.cachedRead(file);
     const fm = this.extractFrontmatter(content);
 
-    const searchText = this.gistEnabled && fm?.gist 
+    const gistEnabled = this.config?.isGistEnabled() ?? false;
+    const searchText = gistEnabled && fm?.gist 
       ? fm.gist 
       : this.getFilenameAsSearchText(file.path);
 
@@ -68,16 +44,16 @@ export class Indexer {
       this.index.delete(file.path);
       this.index.insert_text(file.path, searchText);
 
-      await this.storage.saveNote({
+      const record: NoteRecord = {
         path: file.path,
         gist: searchText,
         mtime: file.stat.mtime,
         indexed: true,
-        type: fm?.type,
-        area: fm?.area,
+        fields: fm?.fields ?? {},
         tags: fm?.tags,
-      });
+      };
 
+      await this.storage.saveNote(record);
       return true;
     }
 
@@ -122,8 +98,17 @@ export class Indexer {
     const allFiles = this.app.vault.getMarkdownFiles();
     const files = this.filterExcludedFiles(allFiles);
     const storedNotes = await this.storage.getAllNotes();
-    const storedByPath = new Map(storedNotes.map(n => [n.path, n]));
+    let storedByPath = new Map(storedNotes.map(n => [n.path, n]));
     const currentPaths = new Set(files.map(f => f.path));
+    const indexSize = this.index.len();
+    
+    console.log(`[Elysium] Sync: ${allFiles.length} total files, ${files.length} after filter, ${storedNotes.length} stored, ${indexSize} in HNSW`);
+    
+    if (storedNotes.length > 0 && indexSize === 0) {
+      console.log('[Elysium] HNSW index empty but storage has records - rebuilding index');
+      await this.storage.clearAll();
+      storedByPath = new Map();
+    }
 
     let added = 0;
     let updated = 0;
@@ -177,10 +162,35 @@ export class Indexer {
 
   async restoreIndex(): Promise<boolean> {
     const data = await this.storage.loadHnswIndex();
-    if (!data) return false;
+    if (!data) {
+      console.log('[Elysium] No HNSW data in storage');
+      return false;
+    }
+    
+    console.log(`[Elysium] HNSW data size: ${data.length} bytes`);
 
-    const restored = HnswIndex.deserialize(data);
-    if (!restored) return false;
+    let restored: HnswIndex | undefined;
+    try {
+      restored = HnswIndex.deserialize(data);
+    } catch (e) {
+      console.error('[Elysium] Deserialize threw:', e);
+      return false;
+    }
+    
+    if (!restored) {
+      console.log('[Elysium] Failed to deserialize HNSW data');
+      return false;
+    }
+
+    const restoredLen = restored.len();
+    console.log(`[Elysium] Deserialized index: ${restoredLen} notes`);
+    
+    if (data.length > 100 && restoredLen === 0) {
+      console.warn('[Elysium] Index data appears corrupted (has bytes but 0 notes), clearing...');
+      restored.free();
+      await this.storage.clearAll();
+      return false;
+    }
 
     this.index.free();
     this.index = restored;
@@ -195,47 +205,40 @@ export class Indexer {
     this.index = index;
   }
 
-  private extractGist(content: string): string | null {
-    const fm = this.extractFrontmatter(content);
-    return fm?.gist ?? null;
-  }
-
-  extractFrontmatter(content: string): { gist?: string; type?: string; area?: string; tags?: string[] } | null {
+  extractFrontmatter(content: string): { gist?: string; fields: Record<string, string>; tags?: string[] } | null {
     const match = content.match(/^---\s*\n([\s\S]*?)\n---/);
     if (!match) return null;
 
     const frontmatter = match[1];
-    const result: { gist?: string; type?: string; area?: string; tags?: string[] } = {};
+    const result: { gist?: string; fields: Record<string, string>; tags?: string[] } = { fields: {} };
     
-    const gistField = this.fieldNames.gist;
-    const gistBlockRegex = new RegExp(`${gistField}:\\s*>\\s*\\n([\\s\\S]*?)(?=\\n[a-zA-Z_]+:|$)`);
+    const gistFieldName = this.config?.getGistFieldName() ?? 'gist';
+    const gistBlockRegex = new RegExp(`${gistFieldName}:\\s*>\\s*\\n([\\s\\S]*?)(?=\\n[a-zA-Z_]+:|$)`);
     const gistBlockMatch = frontmatter.match(gistBlockRegex);
     if (gistBlockMatch) {
       result.gist = gistBlockMatch[1].trim().replace(/\n\s*/g, ' ');
     } else {
-      const gistInlineRegex = new RegExp(`${gistField}:\\s*["']?([^"'\\n]+)["']?`);
+      const gistInlineRegex = new RegExp(`${gistFieldName}:\\s*["']?([^"'\\n]+)["']?`);
       const gistInlineMatch = frontmatter.match(gistInlineRegex);
       if (gistInlineMatch) {
         result.gist = gistInlineMatch[1].trim();
       }
     }
 
-    const typeField = this.fieldNames.type;
-    const typeRegex = new RegExp(`${typeField}:\\s*["']?([^"'\\n\\[\\]]+)["']?`);
-    const typeMatch = frontmatter.match(typeRegex);
-    if (typeMatch) {
-      result.type = typeMatch[1].trim();
+    if (this.config) {
+      const filterableFields = this.config.getFilterableFields();
+      for (const [key, fieldConfig] of Object.entries(filterableFields)) {
+        const fieldName = fieldConfig.name;
+        const fieldRegex = new RegExp(`${fieldName}:\\s*["']?([^"'\\n\\[\\]]+)["']?`);
+        const fieldMatch = frontmatter.match(fieldRegex);
+        if (fieldMatch) {
+          result.fields[key] = fieldMatch[1].trim();
+        }
+      }
     }
 
-    const areaField = this.fieldNames.area;
-    const areaRegex = new RegExp(`${areaField}:\\s*["']?([^"'\\n\\[\\]]+)["']?`);
-    const areaMatch = frontmatter.match(areaRegex);
-    if (areaMatch) {
-      result.area = areaMatch[1].trim();
-    }
-
-    const tagsField = this.fieldNames.tags;
-    const tagsRegex = new RegExp(`${tagsField}:\\s*\\[([^\\]]*)\\]`);
+    const tagsFieldName = this.config?.getTagsFieldName() ?? 'tags';
+    const tagsRegex = new RegExp(`${tagsFieldName}:\\s*\\[([^\\]]*)\\]`);
     const tagsMatch = frontmatter.match(tagsRegex);
     if (tagsMatch) {
       result.tags = tagsMatch[1]

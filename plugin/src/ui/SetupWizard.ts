@@ -434,33 +434,50 @@ export class SetupWizard extends Modal {
 
     contentEl.createEl('h2', { text: 'Preview Changes' });
     
-    const progress = contentEl.createDiv({ cls: 'elysium-wizard-progress' });
-    progress.createEl('div', { cls: 'elysium-wizard-spinner' });
-    this.previewStatusEl = progress.createEl('p', { text: 'Generating migration preview...' });
+    this.previewProgressEl = contentEl.createDiv({ cls: 'elysium-wizard-progress' });
+    this.previewProgressEl.createEl('div', { cls: 'elysium-wizard-spinner' });
+    this.previewStatusEl = this.previewProgressEl.createEl('p', { text: 'Generating migration preview...' });
     this.previewContentEl = contentEl.createDiv({ cls: 'elysium-wizard-preview-content' });
   }
 
+  private previewProgressEl: HTMLElement | null = null;
   private previewStatusEl: HTMLElement | null = null;
   private previewContentEl: HTMLElement | null = null;
 
   private async generatePreview() {
-    if (!this.recommendation) return;
+    if (!this.recommendation) {
+      console.error('SetupWizard: No recommendation available');
+      return;
+    }
 
-    const engine = new MigrationEngine(this.app, this.recommendation, this.gistSettings);
-    
-    this.migrationPlan = await engine.createMigrationPlan((progress) => {
+    try {
+      console.log('SetupWizard: Starting migration preview...');
+      const engine = new MigrationEngine(this.app, this.recommendation, this.gistSettings);
+      
+      this.migrationPlan = await engine.createMigrationPlan((progress) => {
+        if (this.previewStatusEl) {
+          this.previewStatusEl.setText(`Analyzing ${progress.current}/${progress.total}: ${progress.currentFile}`);
+        }
+      });
+
+      console.log('SetupWizard: Migration plan created', this.migrationPlan);
+      this.renderPreviewResults();
+    } catch (e) {
+      console.error('SetupWizard: Failed to generate preview', e);
       if (this.previewStatusEl) {
-        this.previewStatusEl.setText(`Analyzing ${progress.current}/${progress.total}: ${progress.currentFile}`);
+        this.previewStatusEl.setText(`Error: ${e instanceof Error ? e.message : 'Unknown error'}`);
       }
-    });
-
-    this.renderPreviewResults();
+      new Notice(`Failed to generate preview: ${e instanceof Error ? e.message : 'Unknown error'}`);
+    }
   }
 
   private renderPreviewResults() {
-    if (!this.migrationPlan || !this.previewContentEl || !this.previewStatusEl) return;
+    if (!this.migrationPlan || !this.previewContentEl) {
+      console.error('SetupWizard: Missing required elements for preview');
+      return;
+    }
 
-    this.previewStatusEl.remove();
+    this.previewProgressEl?.remove();
     const container = this.previewContentEl;
     container.empty();
 
@@ -490,31 +507,38 @@ export class SetupWizard extends Modal {
 
     if (filesToModify.length > 0) {
       const detailsEl = container.createDiv({ cls: 'elysium-wizard-preview-details' });
-      detailsEl.createEl('h4', { text: 'Sample Changes (first 10 files)' });
+      detailsEl.createEl('h4', { text: 'Sample Changes (first 5 files)' });
 
       const table = detailsEl.createEl('div', { cls: 'elysium-wizard-preview-table' });
       
-      for (const mod of filesToModify.slice(0, 10)) {
+      for (const mod of filesToModify.slice(0, 5)) {
         const row = table.createDiv({ cls: 'preview-row' });
-        row.createEl('span', { text: mod.path, cls: 'file-path' });
+        
+        const fileName = mod.path.split('/').pop() ?? mod.path;
+        row.createEl('span', { text: fileName, cls: 'file-path' });
+        
+        const fieldNames = mod.changes.map(c => c.field).join(', ');
+        const addCount = mod.changes.filter(c => c.action === 'add').length;
+        const updateCount = mod.changes.filter(c => c.action === 'update').length;
         
         const changesEl = row.createDiv({ cls: 'changes' });
-        for (const change of mod.changes) {
-          const changeEl = changesEl.createEl('span', { cls: `change ${change.action}` });
-          if (change.action === 'update') {
-            changeEl.setText(`${change.field}: "${change.oldValue}" → "${change.newValue}"`);
-          } else {
-            const displayValue = change.newValue.length > 50 
-              ? change.newValue.slice(0, 47) + '...' 
-              : change.newValue;
-            changeEl.setText(`+${change.field}: "${displayValue}"`);
-          }
+        if (addCount > 0) {
+          changesEl.createEl('span', { 
+            text: `+${addCount} field${addCount > 1 ? 's' : ''}`, 
+            cls: 'change add' 
+          });
+        }
+        if (updateCount > 0) {
+          changesEl.createEl('span', { 
+            text: `~${updateCount} field${updateCount > 1 ? 's' : ''}`, 
+            cls: 'change update' 
+          });
         }
       }
 
-      if (filesToModify.length > 10) {
+      if (filesToModify.length > 5) {
         detailsEl.createEl('p', { 
-          text: `... and ${filesToModify.length - 10} more files`,
+          text: `... and ${filesToModify.length - 5} more files`,
           cls: 'more-files'
         });
       }

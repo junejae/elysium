@@ -10,8 +10,7 @@ export interface NoteRecord {
   gist: string;
   mtime: number;
   indexed: boolean;
-  type?: string;
-  area?: string;
+  fields: Record<string, string>;
   tags?: string[];
 }
 

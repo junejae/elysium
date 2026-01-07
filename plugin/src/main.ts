@@ -446,14 +446,14 @@ export default class ElysiumPlugin extends Plugin {
     return results.map(([path, score]) => ({ path, score }));
   }
 
-  async searchVaultWithGist(query: string, k: number = 10): Promise<Array<{ path: string; score: number; gist: string | null }>> {
+  async searchVaultWithGist(query: string, k: number = 10): Promise<Array<{ path: string; score: number; gist: string | null; fields: Record<string, string>; tags?: string[] }>> {
     const results = this.searchVault(query, k);
-    if (!this.storage) return results.map(r => ({ ...r, gist: null }));
+    if (!this.storage) return results.map(r => ({ ...r, gist: null, fields: {} }));
 
     const withGist = await Promise.all(
       results.map(async (r) => {
         const note = await this.storage!.getNote(r.path);
-        return { ...r, gist: note?.gist ?? null };
+        return { ...r, gist: note?.gist ?? null, fields: note?.fields ?? {}, tags: note?.tags };
       })
     );
 
@@ -462,13 +462,14 @@ export default class ElysiumPlugin extends Plugin {
 
   async searchVaultFiltered(
     query: string, 
-    filters: { type?: string; area?: string; tag?: string },
+    filters: Record<string, string | undefined>,
+    tag: string | undefined,
     k: number = 10
-  ): Promise<Array<{ path: string; score: number; gist: string | null; type?: string; area?: string; tags?: string[] }>> {
+  ): Promise<Array<{ path: string; score: number; gist: string | null; fields: Record<string, string>; tags?: string[] }>> {
     const rawResults = this.searchVault(query, k * 3);
     if (!this.storage) return [];
 
-    const filtered: Array<{ path: string; score: number; gist: string | null; type?: string; area?: string; tags?: string[] }> = [];
+    const filtered: Array<{ path: string; score: number; gist: string | null; fields: Record<string, string>; tags?: string[] }> = [];
 
     for (const r of rawResults) {
       if (filtered.length >= k) break;
@@ -476,15 +477,21 @@ export default class ElysiumPlugin extends Plugin {
       const note = await this.storage.getNote(r.path);
       if (!note) continue;
 
-      if (filters.type && note.type !== filters.type) continue;
-      if (filters.area && note.area !== filters.area) continue;
-      if (filters.tag && (!note.tags || !note.tags.includes(filters.tag))) continue;
+      let match = true;
+      for (const [fieldKey, filterValue] of Object.entries(filters)) {
+        if (filterValue && note.fields[fieldKey] !== filterValue) {
+          match = false;
+          break;
+        }
+      }
+      if (!match) continue;
+      
+      if (tag && (!note.tags || !note.tags.includes(tag))) continue;
 
       filtered.push({
         ...r,
         gist: note.gist ?? null,
-        type: note.type,
-        area: note.area,
+        fields: note.fields,
         tags: note.tags,
       });
     }
@@ -509,7 +516,7 @@ class ElysiumSearchModal extends Modal {
   resultsEl: HTMLElement;
   private selectedIndex: number = 0;
   private resultItems: HTMLElement[] = [];
-  private activeFilters: { type?: string; area?: string } = {};
+  private activeFilters: Record<string, string | undefined> = {};
 
   constructor(app: App, plugin: ElysiumPlugin) {
     super(app);
@@ -562,45 +569,30 @@ class ElysiumSearchModal extends Modal {
     if (!config) return;
 
     const filterContainer = container.createDiv({ cls: 'elysium-filter-container' });
+    const filterableFieldKeys = config.getFilterableFieldKeys();
 
-    const typeLabel = filterContainer.createEl('span', { text: 'Type:', cls: 'elysium-filter-label' });
-    const typeButtons = filterContainer.createDiv({ cls: 'elysium-filter-group' });
-    
-    const allTypeBtn = typeButtons.createEl('button', { text: 'All', cls: 'elysium-filter-btn is-active' });
-    allTypeBtn.addEventListener('click', () => this.setTypeFilter(undefined, typeButtons));
+    for (const fieldKey of filterableFieldKeys) {
+      const fieldConfig = config.getFieldConfig(fieldKey);
+      if (!fieldConfig) continue;
 
-    for (const typeVal of config.getTypeValues()) {
-      const btn = typeButtons.createEl('button', { text: typeVal, cls: 'elysium-filter-btn' });
-      btn.addEventListener('click', () => this.setTypeFilter(typeVal, typeButtons));
-    }
+      const row = filterContainer.createDiv({ cls: 'elysium-filter-row' });
+      const label = fieldKey.charAt(0).toUpperCase() + fieldKey.slice(1);
+      row.createEl('span', { text: `${label}:`, cls: 'elysium-filter-label' });
+      
+      const buttonGroup = row.createDiv({ cls: 'elysium-filter-group' });
+      
+      const allBtn = buttonGroup.createEl('button', { text: 'All', cls: 'elysium-filter-btn is-active' });
+      allBtn.addEventListener('click', () => this.setFilter(fieldKey, undefined, buttonGroup));
 
-    const areaLabel = filterContainer.createEl('span', { text: 'Area:', cls: 'elysium-filter-label' });
-    const areaButtons = filterContainer.createDiv({ cls: 'elysium-filter-group' });
-    
-    const allAreaBtn = areaButtons.createEl('button', { text: 'All', cls: 'elysium-filter-btn is-active' });
-    allAreaBtn.addEventListener('click', () => this.setAreaFilter(undefined, areaButtons));
-
-    for (const areaVal of config.getAreaValues()) {
-      const btn = areaButtons.createEl('button', { text: areaVal, cls: 'elysium-filter-btn' });
-      btn.addEventListener('click', () => this.setAreaFilter(areaVal, areaButtons));
+      for (const value of fieldConfig.values) {
+        const btn = buttonGroup.createEl('button', { text: value, cls: 'elysium-filter-btn' });
+        btn.addEventListener('click', () => this.setFilter(fieldKey, value, buttonGroup));
+      }
     }
   }
 
-  private setTypeFilter(value: string | undefined, container: HTMLElement) {
-    this.activeFilters.type = value;
-    container.querySelectorAll('.elysium-filter-btn').forEach(btn => btn.removeClass('is-active'));
-    if (value) {
-      container.querySelector(`button:not(:first-child)`)?.parentElement?.querySelectorAll('button').forEach(btn => {
-        if (btn.textContent === value) btn.addClass('is-active');
-      });
-    } else {
-      container.querySelector('button')?.addClass('is-active');
-    }
-    this.handleInput();
-  }
-
-  private setAreaFilter(value: string | undefined, container: HTMLElement) {
-    this.activeFilters.area = value;
+  private setFilter(fieldKey: string, value: string | undefined, container: HTMLElement) {
+    this.activeFilters[fieldKey] = value;
     container.querySelectorAll('.elysium-filter-btn').forEach(btn => btn.removeClass('is-active'));
     if (value) {
       container.querySelectorAll('button').forEach(btn => {
@@ -659,25 +651,28 @@ class ElysiumSearchModal extends Modal {
     this.resultItems[this.selectedIndex]?.scrollIntoView({ block: 'nearest' });
   }
 
-  private parseQuery(input: string): { query: string; filters: { type?: string; area?: string; tag?: string } } {
-    const filters: { type?: string; area?: string; tag?: string } = {};
+  private parseQuery(input: string): { query: string; filters: Record<string, string>; tag?: string } {
+    const filters: Record<string, string> = {};
+    let processedInput = input;
     
-    const typeMatch = input.match(/type:(\S+)/);
-    if (typeMatch) filters.type = typeMatch[1];
-    
-    const areaMatch = input.match(/area:(\S+)/);
-    if (areaMatch) filters.area = areaMatch[1];
+    const config = this.plugin.elysiumConfig;
+    if (config) {
+      for (const fieldKey of config.getFilterableFieldKeys()) {
+        const regex = new RegExp(`${fieldKey}:(\\S+)`, 'g');
+        const match = input.match(regex);
+        if (match) {
+          const valueMatch = match[0].match(new RegExp(`${fieldKey}:(\\S+)`));
+          if (valueMatch) filters[fieldKey] = valueMatch[1];
+          processedInput = processedInput.replace(regex, '');
+        }
+      }
+    }
     
     const tagMatch = input.match(/tag:(\S+)/);
-    if (tagMatch) filters.tag = tagMatch[1];
+    const tag = tagMatch ? tagMatch[1] : undefined;
+    processedInput = processedInput.replace(/tag:\S+/g, '').trim();
 
-    const query = input
-      .replace(/type:\S+/g, '')
-      .replace(/area:\S+/g, '')
-      .replace(/tag:\S+/g, '')
-      .trim();
-
-    return { query, filters };
+    return { query: processedInput, filters, tag };
   }
 
   async search(rawQuery: string) {
@@ -696,20 +691,19 @@ class ElysiumSearchModal extends Modal {
       cls: 'elysium-search-placeholder'
     });
 
-    const { query, filters: textFilters } = this.parseQuery(rawQuery);
+    const { query, filters: textFilters, tag } = this.parseQuery(rawQuery);
     
-    const filters = {
-      type: this.activeFilters.type || textFilters.type,
-      area: this.activeFilters.area || textFilters.area,
-      tag: textFilters.tag,
-    };
+    const filters: Record<string, string | undefined> = { ...this.activeFilters };
+    for (const [key, value] of Object.entries(textFilters)) {
+      if (!filters[key]) filters[key] = value;
+    }
     
-    const hasFilters = filters.type || filters.area || filters.tag;
+    const hasFilters = Object.values(filters).some(v => v) || tag;
 
-    let results: Array<{ path: string; score: number; gist: string | null; type?: string; area?: string; tags?: string[] }>;
+    let results: Array<{ path: string; score: number; gist: string | null; fields: Record<string, string>; tags?: string[] }>;
     
     if (hasFilters) {
-      results = await this.plugin.searchVaultFiltered(query || 'note', filters, 10);
+      results = await this.plugin.searchVaultFiltered(query || 'note', filters, tag, 10);
     } else {
       results = await this.plugin.searchVaultWithGist(query, 10);
     }
@@ -718,7 +712,7 @@ class ElysiumSearchModal extends Modal {
   }
 
   renderResults(
-    results: Array<{ path: string; score: number; gist: string | null; type?: string; area?: string; tags?: string[] }>,
+    results: Array<{ path: string; score: number; gist: string | null; fields?: Record<string, string>; tags?: string[] }>,
     showMeta: boolean = false
   ) {
     this.resultsEl.empty();
@@ -739,9 +733,11 @@ class ElysiumSearchModal extends Modal {
       const title = result.path.replace(/\.md$/, '').split('/').pop() ?? result.path;
       item.createEl('div', { cls: 'elysium-result-title', text: title });
       
-      if (showMeta && (result.type || result.area)) {
-        const metaText = [result.type, result.area].filter(Boolean).join(' · ');
-        item.createEl('div', { cls: 'elysium-result-meta', text: metaText });
+      if (showMeta && result.fields) {
+        const metaValues = Object.values(result.fields).filter(Boolean);
+        if (metaValues.length > 0) {
+          item.createEl('div', { cls: 'elysium-result-meta', text: metaValues.join(' · ') });
+        }
       }
       
       const gistText = result.gist 

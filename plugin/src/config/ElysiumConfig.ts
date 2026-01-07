@@ -10,19 +10,17 @@ export interface GistConfig {
   dateFieldName: string;
 }
 
+export interface FilterableField {
+  name: string;
+  values: string[];
+  filterable: boolean;
+  required: boolean;
+}
+
 export interface SchemaConfig {
-  fields: {
-    type: { name: string; values: string[] };
-    area: { name: string; values: string[] };
-    gist: GistConfig;
-    tags: { name: string };
-  };
-  validation: {
-    requireType: boolean;
-    requireArea: boolean;
-    maxTags: number;
-    lowercaseTags: boolean;
-  };
+  filterableFields: Record<string, FilterableField>;
+  gist: GistConfig;
+  tags: { name: string; maxCount: number; lowercase: boolean };
 }
 
 export interface ElysiumConfigData {
@@ -39,28 +37,22 @@ export interface ElysiumConfigData {
 }
 
 const DEFAULT_CONFIG: ElysiumConfigData = {
-  version: 1,
+  version: 2,
   schema: {
-    fields: {
-      type: { name: 'type', values: ['note', 'term', 'project', 'log'] },
-      area: { name: 'area', values: ['work', 'tech', 'life', 'career', 'learning', 'reference'] },
-      gist: {
-        enabled: false,
-        fieldName: 'gist',
-        autoGenerate: true,
-        maxLength: 200,
-        trackSource: true,
-        sourceFieldName: 'gist_source',
-        dateFieldName: 'gist_date',
-      },
-      tags: { name: 'tags' },
+    filterableFields: {
+      type: { name: 'type', values: ['note', 'term', 'project', 'log'], filterable: true, required: true },
+      area: { name: 'area', values: ['work', 'tech', 'life', 'career', 'learning', 'reference'], filterable: true, required: true },
     },
-    validation: {
-      requireType: true,
-      requireArea: true,
-      maxTags: 5,
-      lowercaseTags: true,
+    gist: {
+      enabled: false,
+      fieldName: 'gist',
+      autoGenerate: true,
+      maxLength: 200,
+      trackSource: true,
+      sourceFieldName: 'gist_source',
+      dateFieldName: 'gist_date',
     },
+    tags: { name: 'tags', maxCount: 5, lowercase: true },
   },
   inbox: {
     enabled: true,
@@ -75,7 +67,8 @@ const DEFAULT_CONFIG: ElysiumConfigData = {
 export class ElysiumConfig {
   private app: App;
   private config: ElysiumConfigData;
-  private configPath = '.elysium.json';
+  private configPath = '.obsidian/plugins/elysium/config.json';
+  private legacyConfigPath = '.elysium.json';
 
   constructor(app: App) {
     this.app = app;
@@ -84,69 +77,108 @@ export class ElysiumConfig {
 
   async load(): Promise<boolean> {
     try {
-      const file = this.app.vault.getAbstractFileByPath(this.configPath);
-      if (!file) {
+      const adapter = this.app.vault.adapter;
+      
+      let exists = await adapter.exists(this.configPath);
+      let pathToRead = this.configPath;
+      
+      if (!exists) {
+        const legacyExists = await adapter.exists(this.legacyConfigPath);
+        if (legacyExists) {
+          pathToRead = this.legacyConfigPath;
+          exists = true;
+        }
+      }
+      
+      if (!exists) {
         return false;
       }
 
-      const content = await this.app.vault.read(file as any);
+      const content = await adapter.read(pathToRead);
       const parsed = JSON.parse(content);
       this.config = this.mergeWithDefaults(parsed);
+      
+      if (pathToRead === this.legacyConfigPath) {
+        await this.save();
+        await adapter.remove(this.legacyConfigPath);
+        console.log('[Elysium] Migrated config from .elysium.json to .obsidian/plugins/elysium/config.json');
+      }
+      
       return true;
     } catch (e) {
-      console.error('Failed to load .elysium.json:', e);
+      console.error('[Elysium] Failed to load config:', e);
       return false;
     }
   }
 
   async save(): Promise<void> {
     const content = JSON.stringify(this.config, null, 2);
-    const file = this.app.vault.getAbstractFileByPath(this.configPath);
-    
-    if (file) {
-      await this.app.vault.modify(file as any, content);
-    } else {
-      await this.app.vault.create(this.configPath, content);
-    }
+    await this.app.vault.adapter.write(this.configPath, content);
   }
 
   async exists(): Promise<boolean> {
-    return this.app.vault.getAbstractFileByPath(this.configPath) !== null;
+    const newExists = await this.app.vault.adapter.exists(this.configPath);
+    if (newExists) return true;
+    return await this.app.vault.adapter.exists(this.legacyConfigPath);
+  }
+
+  private migrateFromV1(parsed: any): Record<string, FilterableField> {
+    const filterableFields: Record<string, FilterableField> = {};
+    const oldFields = parsed.schema?.fields;
+    const oldValidation = parsed.schema?.validation;
+
+    if (oldFields?.type) {
+      filterableFields.type = {
+        name: oldFields.type.name ?? 'type',
+        values: oldFields.type.values ?? DEFAULT_CONFIG.schema.filterableFields.type.values,
+        filterable: true,
+        required: oldValidation?.requireType ?? true,
+      };
+    }
+    if (oldFields?.area) {
+      filterableFields.area = {
+        name: oldFields.area.name ?? 'area',
+        values: oldFields.area.values ?? DEFAULT_CONFIG.schema.filterableFields.area.values,
+        filterable: true,
+        required: oldValidation?.requireArea ?? true,
+      };
+    }
+
+    return filterableFields;
   }
 
   private mergeWithDefaults(parsed: Partial<ElysiumConfigData>): ElysiumConfigData {
-    const parsedGist = parsed.schema?.fields?.gist as Partial<GistConfig> | undefined;
+    const parsedGist = parsed.schema?.gist as Partial<GistConfig> | undefined;
+    
+    let filterableFields: Record<string, FilterableField>;
+    if (parsed.schema?.filterableFields) {
+      filterableFields = { ...DEFAULT_CONFIG.schema.filterableFields, ...parsed.schema.filterableFields };
+    } else if ((parsed as any).schema?.fields) {
+      filterableFields = { ...DEFAULT_CONFIG.schema.filterableFields, ...this.migrateFromV1(parsed) };
+    } else {
+      filterableFields = { ...DEFAULT_CONFIG.schema.filterableFields };
+    }
+
+    const parsedTags = parsed.schema?.tags ?? (parsed as any).schema?.fields?.tags;
+    const oldValidation = (parsed as any).schema?.validation;
     
     return {
-      version: parsed.version ?? DEFAULT_CONFIG.version,
+      version: 2,
       schema: {
-        fields: {
-          type: { 
-            name: parsed.schema?.fields?.type?.name ?? DEFAULT_CONFIG.schema.fields.type.name,
-            values: parsed.schema?.fields?.type?.values ?? DEFAULT_CONFIG.schema.fields.type.values,
-          },
-          area: {
-            name: parsed.schema?.fields?.area?.name ?? DEFAULT_CONFIG.schema.fields.area.name,
-            values: parsed.schema?.fields?.area?.values ?? DEFAULT_CONFIG.schema.fields.area.values,
-          },
-          gist: {
-            enabled: parsedGist?.enabled ?? DEFAULT_CONFIG.schema.fields.gist.enabled,
-            fieldName: parsedGist?.fieldName ?? DEFAULT_CONFIG.schema.fields.gist.fieldName,
-            autoGenerate: parsedGist?.autoGenerate ?? DEFAULT_CONFIG.schema.fields.gist.autoGenerate,
-            maxLength: parsedGist?.maxLength ?? DEFAULT_CONFIG.schema.fields.gist.maxLength,
-            trackSource: parsedGist?.trackSource ?? DEFAULT_CONFIG.schema.fields.gist.trackSource,
-            sourceFieldName: parsedGist?.sourceFieldName ?? DEFAULT_CONFIG.schema.fields.gist.sourceFieldName,
-            dateFieldName: parsedGist?.dateFieldName ?? DEFAULT_CONFIG.schema.fields.gist.dateFieldName,
-          },
-          tags: {
-            name: parsed.schema?.fields?.tags?.name ?? DEFAULT_CONFIG.schema.fields.tags.name,
-          },
+        filterableFields,
+        gist: {
+          enabled: parsedGist?.enabled ?? DEFAULT_CONFIG.schema.gist.enabled,
+          fieldName: parsedGist?.fieldName ?? DEFAULT_CONFIG.schema.gist.fieldName,
+          autoGenerate: parsedGist?.autoGenerate ?? DEFAULT_CONFIG.schema.gist.autoGenerate,
+          maxLength: parsedGist?.maxLength ?? DEFAULT_CONFIG.schema.gist.maxLength,
+          trackSource: parsedGist?.trackSource ?? DEFAULT_CONFIG.schema.gist.trackSource,
+          sourceFieldName: parsedGist?.sourceFieldName ?? DEFAULT_CONFIG.schema.gist.sourceFieldName,
+          dateFieldName: parsedGist?.dateFieldName ?? DEFAULT_CONFIG.schema.gist.dateFieldName,
         },
-        validation: {
-          requireType: parsed.schema?.validation?.requireType ?? DEFAULT_CONFIG.schema.validation.requireType,
-          requireArea: parsed.schema?.validation?.requireArea ?? DEFAULT_CONFIG.schema.validation.requireArea,
-          maxTags: parsed.schema?.validation?.maxTags ?? DEFAULT_CONFIG.schema.validation.maxTags,
-          lowercaseTags: parsed.schema?.validation?.lowercaseTags ?? DEFAULT_CONFIG.schema.validation.lowercaseTags,
+        tags: {
+          name: parsedTags?.name ?? DEFAULT_CONFIG.schema.tags.name,
+          maxCount: parsedTags?.maxCount ?? oldValidation?.maxTags ?? DEFAULT_CONFIG.schema.tags.maxCount,
+          lowercase: parsedTags?.lowercase ?? oldValidation?.lowercaseTags ?? DEFAULT_CONFIG.schema.tags.lowercase,
         },
       },
       inbox: {
@@ -168,60 +200,87 @@ export class ElysiumConfig {
     return this.config.schema;
   }
 
+  getFilterableFields(): Record<string, FilterableField> {
+    return this.config.schema.filterableFields;
+  }
+
+  getFilterableFieldKeys(): string[] {
+    return Object.entries(this.config.schema.filterableFields)
+      .filter(([_, field]) => field.filterable)
+      .map(([key]) => key);
+  }
+
+  getFieldConfig(key: string): FilterableField | undefined {
+    return this.config.schema.filterableFields[key];
+  }
+
+  getFieldName(key: string): string {
+    return this.config.schema.filterableFields[key]?.name ?? key;
+  }
+
+  getFieldValues(key: string): string[] {
+    return this.config.schema.filterableFields[key]?.values ?? [];
+  }
+
+  addFilterableField(key: string, field: FilterableField): void {
+    this.config.schema.filterableFields[key] = field;
+  }
+
+  updateFilterableField(key: string, updates: Partial<FilterableField>): void {
+    if (this.config.schema.filterableFields[key]) {
+      this.config.schema.filterableFields[key] = {
+        ...this.config.schema.filterableFields[key],
+        ...updates,
+      };
+    }
+  }
+
+  removeFilterableField(key: string): void {
+    delete this.config.schema.filterableFields[key];
+  }
+
   getTypeFieldName(): string {
-    return this.config.schema.fields.type.name;
+    return this.getFieldName('type');
   }
 
   getTypeValues(): string[] {
-    return this.config.schema.fields.type.values;
+    return this.getFieldValues('type');
   }
 
   getAreaFieldName(): string {
-    return this.config.schema.fields.area.name;
+    return this.getFieldName('area');
   }
 
   getAreaValues(): string[] {
-    return this.config.schema.fields.area.values;
+    return this.getFieldValues('area');
   }
 
   getGistFieldName(): string {
-    return this.config.schema.fields.gist.fieldName;
+    return this.config.schema.gist.fieldName;
   }
 
   getGistConfig(): GistConfig {
-    return this.config.schema.fields.gist;
+    return this.config.schema.gist;
   }
 
   isGistEnabled(): boolean {
-    return this.config.schema.fields.gist.enabled;
+    return this.config.schema.gist.enabled;
   }
 
   updateGistConfig(gist: Partial<GistConfig>): void {
-    this.config.schema.fields.gist = { ...this.config.schema.fields.gist, ...gist };
+    this.config.schema.gist = { ...this.config.schema.gist, ...gist };
   }
 
   getTagsFieldName(): string {
-    return this.config.schema.fields.tags.name;
+    return this.config.schema.tags.name;
   }
 
-  updateSchema(schema: Partial<SchemaConfig>): void {
-    if (schema.fields) {
-      if (schema.fields.type) {
-        this.config.schema.fields.type = { ...this.config.schema.fields.type, ...schema.fields.type };
-      }
-      if (schema.fields.area) {
-        this.config.schema.fields.area = { ...this.config.schema.fields.area, ...schema.fields.area };
-      }
-      if (schema.fields.gist) {
-        this.config.schema.fields.gist = { ...this.config.schema.fields.gist, ...schema.fields.gist };
-      }
-      if (schema.fields.tags) {
-        this.config.schema.fields.tags = { ...this.config.schema.fields.tags, ...schema.fields.tags };
-      }
-    }
-    if (schema.validation) {
-      this.config.schema.validation = { ...this.config.schema.validation, ...schema.validation };
-    }
+  getTagsConfig(): { name: string; maxCount: number; lowercase: boolean } {
+    return this.config.schema.tags;
+  }
+
+  updateTagsConfig(tags: Partial<{ name: string; maxCount: number; lowercase: boolean }>): void {
+    this.config.schema.tags = { ...this.config.schema.tags, ...tags };
   }
 
   getInboxPath(): string {

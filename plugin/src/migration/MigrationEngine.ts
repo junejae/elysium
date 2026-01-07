@@ -93,15 +93,29 @@ export class MigrationEngine {
     for (let i = 0; i < files.length; i++) {
       const file = files[i];
       
-      onProgress?.({
-        current: i + 1,
-        total: files.length,
-        currentFile: file.path,
-        phase: 'analyzing',
-      });
+      if (i % 10 === 0) {
+        onProgress?.({
+          current: i + 1,
+          total: files.length,
+          currentFile: file.path,
+          phase: 'analyzing',
+        });
+        await new Promise(resolve => setTimeout(resolve, 0));
+      }
 
-      const content = await this.app.vault.cachedRead(file);
-      const modification = this.analyzeFile(file, content);
+      const cachedMeta = this.app.metadataCache.getFileCache(file);
+      const frontmatter = cachedMeta?.frontmatter ?? null;
+      
+      let content: string | null = null;
+      const needsContent = this.gistConfig.enabled && 
+                          this.gistConfig.autoGenerate && 
+                          !frontmatter?.[this.recommendation.gistField.recommendedName];
+      
+      if (needsContent) {
+        content = await this.app.vault.cachedRead(file);
+      }
+
+      const modification = this.analyzeFileWithCache(file, frontmatter, content);
 
       if (modification.changes.length > 0 || modification.needsNewFrontmatter) {
         filesToModify.push(modification);
@@ -131,9 +145,12 @@ export class MigrationEngine {
     };
   }
 
-  private analyzeFile(file: TFile, content: string): FileModification {
+  private analyzeFileWithCache(
+    file: TFile, 
+    frontmatter: Record<string, unknown> | null,
+    content: string | null
+  ): FileModification {
     const changes: FieldChange[] = [];
-    const frontmatter = this.extractFrontmatter(content);
     const hasFrontmatter = frontmatter !== null;
     const needsNewFrontmatter = !hasFrontmatter;
 
@@ -185,7 +202,7 @@ export class MigrationEngine {
       }
     }
 
-    if (this.gistConfig.enabled && this.gistConfig.autoGenerate) {
+    if (this.gistConfig.enabled && this.gistConfig.autoGenerate && content) {
       const gistRec = this.recommendation.gistField;
       const hasGist = frontmatter && (
         frontmatter[gistRec.recommendedName] || 

@@ -474,13 +474,13 @@ impl VaultService {
                     "exists": false,
                     "path": inbox_path.to_string_lossy(),
                     "content": null
-                }).to_string()
+                })
+                .to_string(),
             )]));
         }
 
-        let content = std::fs::read_to_string(&inbox_path).map_err(|e| {
-            McpError::internal_error(format!("Failed to read inbox: {}", e), None)
-        })?;
+        let content = std::fs::read_to_string(&inbox_path)
+            .map_err(|e| McpError::internal_error(format!("Failed to read inbox: {}", e), None))?;
 
         let output = serde_json::json!({
             "exists": true,
@@ -491,7 +491,7 @@ impl VaultService {
         });
 
         Ok(CallToolResult::success(vec![Content::text(
-            serde_json::to_string_pretty(&output).unwrap_or_default()
+            serde_json::to_string_pretty(&output).unwrap_or_default(),
         )]))
     }
 
@@ -505,19 +505,19 @@ impl VaultService {
 
         if !inbox_path.exists() {
             return Ok(CallToolResult::success(vec![Content::text(
-                "Inbox file does not exist"
+                "Inbox file does not exist",
             )]));
         }
 
-        std::fs::write(&inbox_path, "").map_err(|e| {
-            McpError::internal_error(format!("Failed to clear inbox: {}", e), None)
-        })?;
+        std::fs::write(&inbox_path, "")
+            .map_err(|e| McpError::internal_error(format!("Failed to clear inbox: {}", e), None))?;
 
         Ok(CallToolResult::success(vec![Content::text(
             serde_json::json!({
                 "success": true,
                 "message": "Inbox cleared"
-            }).to_string()
+            })
+            .to_string(),
         )]))
     }
 
@@ -528,13 +528,15 @@ impl VaultService {
     async fn vault_get_stale_gists(&self) -> Result<CallToolResult, McpError> {
         let vault_paths = self.get_vault_paths();
         let notes = collect_all_notes(&vault_paths);
-        
+
         let mut stale_notes: Vec<serde_json::Value> = Vec::new();
 
         let gist_date_re = regex::Regex::new(r"(?m)^gist_date:\s*(\d{4}-\d{2}-\d{2})").unwrap();
-        
+
         for note in notes {
-            let gist_date = note.frontmatter.as_ref()
+            let gist_date = note
+                .frontmatter
+                .as_ref()
                 .and_then(|fm| gist_date_re.captures(&fm.raw))
                 .and_then(|caps| caps.get(1))
                 .and_then(|m| chrono::NaiveDate::parse_from_str(m.as_str(), "%Y-%m-%d").ok());
@@ -542,7 +544,8 @@ impl VaultService {
             if let Some(gist_date) = gist_date {
                 if let Ok(metadata) = std::fs::metadata(&note.path) {
                     if let Ok(modified) = metadata.modified() {
-                        let modified_date = chrono::DateTime::<chrono::Local>::from(modified).date_naive();
+                        let modified_date =
+                            chrono::DateTime::<chrono::Local>::from(modified).date_naive();
                         if gist_date < modified_date {
                             stale_notes.push(serde_json::json!({
                                 "title": note.name,
@@ -563,7 +566,7 @@ impl VaultService {
         });
 
         Ok(CallToolResult::success(vec![Content::text(
-            serde_json::to_string_pretty(&output).unwrap_or_default()
+            serde_json::to_string_pretty(&output).unwrap_or_default(),
         )]))
     }
 
@@ -594,10 +597,10 @@ impl VaultService {
 
                 let today = chrono::Local::now().format("%Y-%m-%d").to_string();
                 let new_content = self.update_frontmatter_gist(
-                    &content, 
-                    &params.0.gist, 
+                    &content,
+                    &params.0.gist,
                     &params.0.source,
-                    &today
+                    &today,
                 );
 
                 std::fs::write(&note.path, &new_content).map_err(|e| {
@@ -611,32 +614,40 @@ impl VaultService {
                         "gist": params.0.gist,
                         "source": params.0.source,
                         "date": today
-                    }).to_string()
+                    })
+                    .to_string(),
                 )]))
             }
             None => Ok(CallToolResult::success(vec![Content::text(
                 serde_json::json!({
                     "success": false,
                     "error": format!("Note not found: {}", note_name)
-                }).to_string()
+                })
+                .to_string(),
             )])),
         }
     }
 }
 
 impl VaultService {
-    fn update_frontmatter_gist(&self, content: &str, gist: &str, source: &str, date: &str) -> String {
+    fn update_frontmatter_gist(
+        &self,
+        content: &str,
+        gist: &str,
+        source: &str,
+        date: &str,
+    ) -> String {
         let fm_regex = regex::Regex::new(r"^---\s*\n([\s\S]*?)\n---").unwrap();
-        
+
         if let Some(caps) = fm_regex.captures(content) {
             let fm_content = caps.get(1).map(|m| m.as_str()).unwrap_or("");
             let after_fm = &content[caps.get(0).unwrap().end()..];
-            
+
             let mut new_fm = String::new();
             let mut gist_added = false;
             let mut source_added = false;
             let mut date_added = false;
-            
+
             for line in fm_content.lines() {
                 if line.starts_with("gist:") {
                     new_fm.push_str(&format!("gist: >\n  {}\n", gist));
@@ -654,7 +665,7 @@ impl VaultService {
                     new_fm.push('\n');
                 }
             }
-            
+
             if !gist_added {
                 new_fm.push_str(&format!("gist: >\n  {}\n", gist));
             }
@@ -664,10 +675,13 @@ impl VaultService {
             if !date_added {
                 new_fm.push_str(&format!("gist_date: {}\n", date));
             }
-            
+
             format!("---\n{}---{}", new_fm, after_fm)
         } else {
-            format!("---\ngist: >\n  {}\ngist_source: {}\ngist_date: {}\n---\n{}", gist, source, date, content)
+            format!(
+                "---\ngist: >\n  {}\ngist_source: {}\ngist_date: {}\n---\n{}",
+                gist, source, date, content
+            )
         }
     }
 }

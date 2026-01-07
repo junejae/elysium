@@ -93,8 +93,7 @@ This creates `.elysium.json` with customizable settings:
   },
   "features": {
     "semantic_search": true,
-    "wikilink_validation": true,
-    "footer_markers": true
+    "wikilink_validation": true
   }
 }
 ```
@@ -177,7 +176,6 @@ elysium tags --analyze    # Tag analysis and suggestions
 elysium related "note"    # Find related notes
 
 elysium fix --wikilinks   # Fix broken wikilinks (dry-run)
-elysium fix --footer      # Fix missing footer markers
 elysium fix --execute     # Apply fixes
 ```
 

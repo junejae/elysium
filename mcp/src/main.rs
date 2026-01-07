@@ -81,18 +81,6 @@ enum Commands {
     Fix {
         #[arg(long, help = "Fix broken wikilinks")]
         wikilinks: bool,
-        #[arg(long, help = "Fix missing footer markers")]
-        footer: bool,
-        #[arg(
-            long,
-            help = "Migrate footer to v2 format (add footer_start, convert metadata)"
-        )]
-        migrate: bool,
-        #[arg(
-            long,
-            help = "Check only, exit 1 if issues found (for pre-commit hook)"
-        )]
-        check: bool,
         #[arg(long, help = "Actually apply fixes (default: dry-run)")]
         execute: bool,
         #[arg(long, help = "JSON output")]
@@ -169,12 +157,9 @@ fn main() -> anyhow::Result<()> {
         Some(Commands::Tags { analyze, json }) => commands::tags::run(analyze, json),
         Some(Commands::Fix {
             wikilinks,
-            footer,
-            migrate,
-            check,
             execute,
             json,
-        }) => commands::fix::run(wikilinks, footer, migrate, check, !execute, json),
+        }) => commands::fix::run(wikilinks, !execute, json),
 
         // Semantic Search
         Some(Commands::Index {

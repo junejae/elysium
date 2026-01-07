@@ -35,7 +35,6 @@ export interface ElysiumConfigData {
   features: {
     semanticSearch: boolean;
     wikilinkValidation: boolean;
-    footerMarkers: boolean;
   };
 }
 
@@ -70,7 +69,6 @@ const DEFAULT_CONFIG: ElysiumConfigData = {
   features: {
     semanticSearch: true,
     wikilinkValidation: true,
-    footerMarkers: true,
   },
 };
 
@@ -158,7 +156,6 @@ export class ElysiumConfig {
       features: {
         semanticSearch: parsed.features?.semanticSearch ?? DEFAULT_CONFIG.features.semanticSearch,
         wikilinkValidation: parsed.features?.wikilinkValidation ?? DEFAULT_CONFIG.features.wikilinkValidation,
-        footerMarkers: parsed.features?.footerMarkers ?? DEFAULT_CONFIG.features.footerMarkers,
       },
     };
   }

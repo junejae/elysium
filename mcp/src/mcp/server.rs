@@ -357,13 +357,27 @@ impl VaultService {
         Ok(CallToolResult::success(vec![Content::text(output)]))
     }
 
-    /// Get vault health score
+    /// Get vault status summary with health metrics
     #[tool(
-        description = "Get Second Brain Vault health score (0-100) based on schema compliance, gist coverage, and link integrity."
+        description = "Get Second Brain Vault status summary including note counts by type/area and health score (0-100)."
     )]
-    async fn vault_health(&self) -> Result<CallToolResult, McpError> {
+    async fn vault_status(&self) -> Result<CallToolResult, McpError> {
         let vault_paths = self.get_vault_paths();
         let notes = collect_all_notes(&vault_paths);
+
+        let mut by_type: std::collections::HashMap<String, usize> =
+            std::collections::HashMap::new();
+        let mut by_area: std::collections::HashMap<String, usize> =
+            std::collections::HashMap::new();
+
+        for note in &notes {
+            if let Some(t) = note.note_type() {
+                *by_type.entry(t.to_string()).or_insert(0) += 1;
+            }
+            if let Some(a) = note.area() {
+                *by_area.entry(a.to_string()).or_insert(0) += 1;
+            }
+        }
 
         let total = notes.len();
         let with_gist = notes.iter().filter(|n| n.gist().is_some()).count();
@@ -389,44 +403,15 @@ impl VaultService {
         let health_score = (gist_score + type_score + area_score).round() as u32;
 
         let output = serde_json::json!({
-            "score": health_score,
             "total_notes": total,
-            "gist_coverage": format!("{:.0}%", if total > 0 { (with_gist as f64 / total as f64) * 100.0 } else { 0.0 }),
-            "type_coverage": format!("{:.0}%", if total > 0 { (with_type as f64 / total as f64) * 100.0 } else { 0.0 }),
-            "area_coverage": format!("{:.0}%", if total > 0 { (with_area as f64 / total as f64) * 100.0 } else { 0.0 }),
-        });
-
-        Ok(CallToolResult::success(vec![Content::text(
-            serde_json::to_string_pretty(&output).unwrap_or_default(),
-        )]))
-    }
-
-    /// Get vault status summary
-    #[tool(
-        description = "Get Second Brain Vault status summary including note counts by type and area."
-    )]
-    async fn vault_status(&self) -> Result<CallToolResult, McpError> {
-        let vault_paths = self.get_vault_paths();
-        let notes = collect_all_notes(&vault_paths);
-
-        let mut by_type: std::collections::HashMap<String, usize> =
-            std::collections::HashMap::new();
-        let mut by_area: std::collections::HashMap<String, usize> =
-            std::collections::HashMap::new();
-
-        for note in &notes {
-            if let Some(t) = note.note_type() {
-                *by_type.entry(t.to_string()).or_insert(0) += 1;
-            }
-            if let Some(a) = note.area() {
-                *by_area.entry(a.to_string()).or_insert(0) += 1;
-            }
-        }
-
-        let output = serde_json::json!({
-            "total_notes": notes.len(),
             "by_type": by_type,
             "by_area": by_area,
+            "health": {
+                "score": health_score,
+                "gist_coverage": format!("{:.0}%", if total > 0 { (with_gist as f64 / total as f64) * 100.0 } else { 0.0 }),
+                "type_coverage": format!("{:.0}%", if total > 0 { (with_type as f64 / total as f64) * 100.0 } else { 0.0 }),
+                "area_coverage": format!("{:.0}%", if total > 0 { (with_area as f64 / total as f64) * 100.0 } else { 0.0 }),
+            }
         });
 
         Ok(CallToolResult::success(vec![Content::text(
@@ -470,6 +455,10 @@ impl VaultService {
             // Orphan notes check
             let orphans_check = self.check_orphans(&notes, &note_names, verbose);
             checks.push(orphans_check);
+
+            // Stale gists check
+            let stale_gists_check = self.check_stale_gists(&notes, verbose);
+            checks.push(stale_gists_check);
         }
 
         let passed = checks.iter().filter(|c| c.status == "pass").count();
@@ -569,56 +558,6 @@ impl VaultService {
                 "message": "Inbox cleared"
             })
             .to_string(),
-        )]))
-    }
-
-    /// Get notes with stale gists (gist_date < file modified time)
-    #[tool(
-        description = "Get list of notes where gist is outdated (gist_date older than file modification time). Useful for AI to identify notes needing gist refresh."
-    )]
-    async fn vault_get_stale_gists(&self) -> Result<CallToolResult, McpError> {
-        let vault_paths = self.get_vault_paths();
-        let notes = collect_all_notes(&vault_paths);
-
-        let mut stale_notes: Vec<serde_json::Value> = Vec::new();
-
-        let gist_date_re =
-            regex::Regex::new(r"(?m)^elysium_gist_date:\s*(\d{4}-\d{2}-\d{2})").unwrap();
-
-        for note in notes {
-            let gist_date = note
-                .frontmatter
-                .as_ref()
-                .and_then(|fm| gist_date_re.captures(&fm.raw))
-                .and_then(|caps| caps.get(1))
-                .and_then(|m| chrono::NaiveDate::parse_from_str(m.as_str(), "%Y-%m-%d").ok());
-
-            if let Some(gist_date) = gist_date {
-                if let Ok(metadata) = std::fs::metadata(&note.path) {
-                    if let Ok(modified) = metadata.modified() {
-                        let modified_date =
-                            chrono::DateTime::<chrono::Local>::from(modified).date_naive();
-                        if gist_date < modified_date {
-                            stale_notes.push(serde_json::json!({
-                                "title": note.name,
-                                "path": note.path.to_string_lossy(),
-                                "gist_date": gist_date.to_string(),
-                                "modified_date": modified_date.to_string(),
-                                "current_gist": note.gist()
-                            }));
-                        }
-                    }
-                }
-            }
-        }
-
-        let output = serde_json::json!({
-            "count": stale_notes.len(),
-            "notes": stale_notes
-        });
-
-        Ok(CallToolResult::success(vec![Content::text(
-            serde_json::to_string_pretty(&output).unwrap_or_default(),
         )]))
     }
 
@@ -1061,6 +1000,56 @@ impl VaultService {
             status: if ratio < 0.3 { "pass" } else { "fail" }.to_string(),
             errors: orphans,
             details: Some(format!("{} orphan notes ({:.0}%)", orphans, ratio * 100.0)),
+            error_list: if verbose && !errors.is_empty() {
+                Some(errors)
+            } else {
+                None
+            },
+        }
+    }
+
+    fn check_stale_gists(
+        &self,
+        notes: &[crate::core::note::Note],
+        verbose: bool,
+    ) -> AuditCheckJson {
+        let mut errors = Vec::new();
+        let gist_date_re =
+            regex::Regex::new(r"(?m)^elysium_gist_date:\s*(\d{4}-\d{2}-\d{2})").unwrap();
+
+        for note in notes {
+            let gist_date = note
+                .frontmatter
+                .as_ref()
+                .and_then(|fm| gist_date_re.captures(&fm.raw))
+                .and_then(|caps| caps.get(1))
+                .and_then(|m| chrono::NaiveDate::parse_from_str(m.as_str(), "%Y-%m-%d").ok());
+
+            if let Some(gist_date) = gist_date {
+                if let Ok(metadata) = std::fs::metadata(&note.path) {
+                    if let Ok(modified) = metadata.modified() {
+                        let modified_date =
+                            chrono::DateTime::<chrono::Local>::from(modified).date_naive();
+                        if gist_date < modified_date {
+                            errors.push(AuditErrorJson {
+                                note: note.name.clone(),
+                                message: format!(
+                                    "Stale gist: {} < {}",
+                                    gist_date, modified_date
+                                ),
+                            });
+                        }
+                    }
+                }
+            }
+        }
+
+        AuditCheckJson {
+            id: "stale_gists".to_string(),
+            name: "Stale Gists".to_string(),
+            status: if errors.is_empty() { "pass" } else { "warn" }.to_string(),
+            errors: errors.len(),
+            details: Some(format!("{} notes with outdated gists", errors.len())),
             error_list: if verbose && !errors.is_empty() {
                 Some(errors)
             } else {

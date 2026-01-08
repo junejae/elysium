@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.2] - 2026-01-08
+
+### Changed
+- **BREAKING**: `vault_health` removed - merged into `vault_status`
+  - `vault_status` now returns `health` object with score and coverage metrics
+- **BREAKING**: `vault_get_stale_gists` removed - merged into `vault_audit`
+  - `vault_audit` now includes `stale_gists` check (in full mode, not quick)
+
+### Migration Guide
+```
+# Before (v0.6.x)
+vault_status()   → {total_notes, by_type, by_area}
+vault_health()   → {score, gist_coverage, type_coverage, area_coverage}
+vault_get_stale_gists() → {count, notes: [...]}
+
+# After (v0.7.2)
+vault_status()   → {total_notes, by_type, by_area, health: {score, ...}}
+vault_audit()    → {checks: [..., {id: "stale_gists", ...}]}
+```
+
 ## [0.6.2] - 2026-01-08
 
 ### Fixed

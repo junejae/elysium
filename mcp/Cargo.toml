@@ -1,6 +1,6 @@
 [package]
 name = "elysium-mcp"
-version = "0.6.0"
+version = "0.6.1"
 edition = "2021"
 description = "MCP server for Obsidian-based Second Brain with AI-powered semantic search"
 authors = ["junejae"]

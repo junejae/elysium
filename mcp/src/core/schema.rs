@@ -74,10 +74,18 @@ impl std::fmt::Display for SchemaViolation {
             Self::MissingFrontmatter => write!(f, "Missing YAML frontmatter"),
             Self::MissingField(field) => write!(f, "Missing required field: {}", field),
             Self::InvalidType(t) => {
-                write!(f, "Invalid elysium_type '{}' (must be: note|term|project|log)", t)
+                write!(
+                    f,
+                    "Invalid elysium_type '{}' (must be: note|term|project|log)",
+                    t
+                )
             }
             Self::InvalidStatus(s) => {
-                write!(f, "Invalid elysium_status '{}' (must be: active|done|archived)", s)
+                write!(
+                    f,
+                    "Invalid elysium_status '{}' (must be: active|done|archived)",
+                    s
+                )
             }
             Self::InvalidArea(a) => write!(
                 f,
@@ -123,10 +131,15 @@ impl SchemaValidator {
             types: default_types().iter().map(|s| s.to_string()).collect(),
             statuses: default_statuses().iter().map(|s| s.to_string()).collect(),
             areas: default_areas().iter().map(|s| s.to_string()).collect(),
-            required_fields: ["elysium_type", "elysium_status", "elysium_area", "elysium_gist"]
-                .iter()
-                .map(|s| s.to_string())
-                .collect(),
+            required_fields: [
+                "elysium_type",
+                "elysium_status",
+                "elysium_area",
+                "elysium_gist",
+            ]
+            .iter()
+            .map(|s| s.to_string())
+            .collect(),
             max_tags: 5,
             lowercase_tags: true,
             allow_hierarchical_tags: false,

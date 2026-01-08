@@ -168,7 +168,9 @@ impl Frontmatter {
         // Status validation
         if validator.is_required("elysium_status") {
             match &self.status {
-                None => violations.push(SchemaViolation::MissingField("elysium_status".to_string())),
+                None => {
+                    violations.push(SchemaViolation::MissingField("elysium_status".to_string()))
+                }
                 Some(s) if !validator.is_valid_status(s) => {
                     violations.push(SchemaViolation::InvalidStatus(s.clone()))
                 }

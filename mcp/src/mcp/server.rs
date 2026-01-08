@@ -582,7 +582,8 @@ impl VaultService {
 
         let mut stale_notes: Vec<serde_json::Value> = Vec::new();
 
-        let gist_date_re = regex::Regex::new(r"(?m)^elysium_gist_date:\s*(\d{4}-\d{2}-\d{2})").unwrap();
+        let gist_date_re =
+            regex::Regex::new(r"(?m)^elysium_gist_date:\s*(\d{4}-\d{2}-\d{2})").unwrap();
 
         for note in notes {
             let gist_date = note

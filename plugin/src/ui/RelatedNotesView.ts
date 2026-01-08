@@ -1,5 +1,6 @@
 import { ItemView, WorkspaceLeaf, TFile, MarkdownView } from 'obsidian';
 import type ElysiumPlugin from '../main';
+import { logger } from '../main';
 
 export const RELATED_NOTES_VIEW_TYPE = 'elysium-related-notes';
 
@@ -26,6 +27,7 @@ export class RelatedNotesView extends ItemView {
   }
 
   async onOpen() {
+    logger.debug('RelatedNotes', 'onOpen called');
     const container = this.containerEl.children[1];
     container.empty();
     container.addClass('elysium-related-view');
@@ -38,12 +40,14 @@ export class RelatedNotesView extends ItemView {
 
     this.registerEvent(
       this.app.workspace.on('active-leaf-change', () => {
+        logger.debug('RelatedNotes', 'active-leaf-change event');
         this.updateRelatedNotes();
       })
     );
 
     this.registerEvent(
       this.app.workspace.on('file-open', () => {
+        logger.debug('RelatedNotes', 'file-open event');
         this.updateRelatedNotes();
       })
     );
@@ -53,6 +57,12 @@ export class RelatedNotesView extends ItemView {
 
   async onClose() {
     this.contentEl?.empty();
+  }
+
+  refresh() {
+    logger.debug('RelatedNotes', 'refresh() called, resetting currentFile');
+    this.currentFile = null;
+    this.updateRelatedNotes();
   }
 
   private showPlaceholder(text: string) {
@@ -72,39 +82,62 @@ export class RelatedNotesView extends ItemView {
   }
 
   async updateRelatedNotes() {
-    const activeView = this.app.workspace.getActiveViewOfType(MarkdownView);
-    if (!activeView) {
-      this.showPlaceholder('Open a note to see related notes');
-      this.currentFile = null;
+    logger.debug('RelatedNotes', 'updateRelatedNotes called');
+    
+    const markdownLeaves = this.app.workspace.getLeavesOfType('markdown');
+    logger.debug('RelatedNotes', `Found ${markdownLeaves.length} markdown leaves`);
+    
+    const mainMarkdownLeaf = markdownLeaves.find(leaf => leaf.getRoot() === this.app.workspace.rootSplit);
+    
+    if (!mainMarkdownLeaf) {
+      logger.debug('RelatedNotes', 'No main markdown leaf found');
+      if (!this.currentFile) {
+        this.showPlaceholder('Open a note to see related notes');
+      }
       return;
     }
 
-    const file = activeView.file;
+    const view = mainMarkdownLeaf.view;
+    if (!(view instanceof MarkdownView)) {
+      logger.debug('RelatedNotes', 'View is not MarkdownView');
+      return;
+    }
+
+    const file = view.file;
     if (!file) {
-      this.showPlaceholder('No file open');
-      this.currentFile = null;
+      logger.debug('RelatedNotes', 'No file in view');
+      if (!this.currentFile) {
+        this.showPlaceholder('No file open');
+      }
       return;
     }
 
     if (this.currentFile?.path === file.path) {
+      logger.debug('RelatedNotes', 'Same file, skipping update');
       return;
     }
 
+    logger.debug('RelatedNotes', `Updating for file: ${file.path}`);
     this.currentFile = file;
     await this.findRelatedNotes(file);
   }
 
   private async findRelatedNotes(file: TFile) {
+    logger.debug('RelatedNotes', `findRelatedNotes for: ${file.path}`);
     this.contentEl.empty();
 
     const indexCount = this.plugin.getIndexCount();
+    logger.debug('RelatedNotes', `Index count: ${indexCount}`);
+    
     if (indexCount === 0) {
+      logger.debug('RelatedNotes', 'Index is empty, showing placeholder');
       this.showPlaceholder('Index empty. Run "Reindex Vault" first.');
       return;
     }
 
     const content = await this.app.vault.cachedRead(file);
     const gist = this.extractGist(content);
+    logger.debug('RelatedNotes', `Extracted gist: ${gist ? gist.slice(0, 50) + '...' : 'null'}`);
 
     if (!gist) {
       this.showPlaceholder('No gist found in this note');
@@ -112,7 +145,10 @@ export class RelatedNotesView extends ItemView {
     }
 
     const results = this.plugin.searchVault(gist, 6);
+    logger.debug('RelatedNotes', `Search returned ${results.length} results`);
+    
     const filtered = results.filter(r => r.path !== file.path).slice(0, 5);
+    logger.debug('RelatedNotes', `After filtering: ${filtered.length} results`);
 
     if (filtered.length === 0) {
       this.showPlaceholder('No related notes found');
@@ -143,9 +179,23 @@ export class RelatedNotesView extends ItemView {
       const scoreEl = item.createDiv({ cls: 'elysium-related-score' });
       scoreEl.setText(`${Math.round(result.score * 100)}%`);
 
-      item.addEventListener('click', () => {
-        this.app.workspace.openLinkText(result.path, '', false);
+      item.addEventListener('click', async (e: MouseEvent) => {
+        e.preventDefault();
+        await this.openNote(result.path, e.ctrlKey || e.metaKey);
       });
+    }
+  }
+
+  private async openNote(path: string, newTab: boolean = false): Promise<void> {
+    logger.debug('RelatedNotes', `openNote: ${path}, newTab: ${newTab}`);
+    const file = this.app.vault.getAbstractFileByPath(path);
+    if (file instanceof TFile) {
+      const leaf = this.app.workspace.getLeaf(newTab ? 'tab' : false);
+      logger.debug('RelatedNotes', `Got leaf, opening file`);
+      await leaf.openFile(file);
+      logger.debug('RelatedNotes', `File opened`);
+    } else {
+      logger.debug('RelatedNotes', `File not found: ${path}`);
     }
   }
 

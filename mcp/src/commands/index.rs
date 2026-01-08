@@ -4,64 +4,27 @@ use anyhow::Result;
 use colored::Colorize;
 use std::path::PathBuf;
 
-use crate::core::paths::VaultPaths;
 use crate::search::engine::SearchEngine;
 
-/// Get default paths for search engine
-fn get_default_paths() -> (PathBuf, PathBuf, PathBuf) {
+fn get_default_paths() -> (PathBuf, PathBuf) {
     let vault_path = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
     let tools_path = vault_path.join(".opencode/tools");
     let db_path = tools_path.join("data/search.db");
-    let model_path = tools_path.join("models/model.onnx");
 
-    (vault_path, db_path, model_path)
+    (vault_path, db_path)
 }
 
-/// Run index command
 pub fn run(status_only: bool, rebuild: bool, json: bool) -> Result<()> {
-    let (vault_path, db_path, model_path) = get_default_paths();
+    let (vault_path, db_path) = get_default_paths();
 
     if status_only {
         return show_status(&db_path, json);
     }
 
-    // Check if model exists
-    if !model_path.exists() {
-        if json {
-            println!(
-                "{}",
-                serde_json::json!({
-                    "error": "Model not found",
-                    "model_path": model_path.display().to_string(),
-                    "hint": "Download the ONNX model first"
-                })
-            );
-        } else {
-            eprintln!(
-                "{} Model not found at: {}",
-                "Error:".red().bold(),
-                model_path.display()
-            );
-            eprintln!();
-            eprintln!("To download the model, run:");
-            eprintln!(
-                "  {}",
-                "# Download paraphrase-multilingual-MiniLM-L12-v2".dimmed()
-            );
-            eprintln!("  curl -L -o {} \\", model_path.display());
-            eprintln!(
-                "    https://huggingface.co/sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2/resolve/main/onnx/model.onnx"
-            );
-        }
-        std::process::exit(1);
-    }
-
-    // Create data directory if needed
     if let Some(parent) = db_path.parent() {
         std::fs::create_dir_all(parent)?;
     }
 
-    // Delete existing database if rebuild requested
     if rebuild && db_path.exists() {
         std::fs::remove_file(&db_path)?;
         if !json {
@@ -69,8 +32,7 @@ pub fn run(status_only: bool, rebuild: bool, json: bool) -> Result<()> {
         }
     }
 
-    // Initialize search engine
-    let mut engine = SearchEngine::new(&vault_path, &db_path, &model_path)?;
+    let mut engine = SearchEngine::new(&vault_path, &db_path)?;
 
     if !json {
         println!("{} Building search index...", "→".dimmed());

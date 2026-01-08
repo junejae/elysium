@@ -13,6 +13,7 @@ interface ElysiumSettings {
   indexOnStartup: boolean;
   debounceMs: number;
   showRelatedNotes: boolean;
+  debugMode: boolean;
 }
 
 const DEFAULT_SETTINGS: ElysiumSettings = {
@@ -20,7 +21,43 @@ const DEFAULT_SETTINGS: ElysiumSettings = {
   indexOnStartup: true,
   debounceMs: 1000,
   showRelatedNotes: true,
+  debugMode: false,
 };
+
+class Logger {
+  private prefix = '[Elysium]';
+  private enabled = false;
+
+  setEnabled(enabled: boolean) {
+    this.enabled = enabled;
+  }
+
+  debug(component: string, message: string, data?: unknown) {
+    if (!this.enabled) return;
+    const timestamp = new Date().toISOString().slice(11, 23);
+    if (data !== undefined) {
+      console.log(`${this.prefix}[${timestamp}][${component}] ${message}`, data);
+    } else {
+      console.log(`${this.prefix}[${timestamp}][${component}] ${message}`);
+    }
+  }
+
+  info(component: string, message: string, data?: unknown) {
+    const timestamp = new Date().toISOString().slice(11, 23);
+    if (data !== undefined) {
+      console.log(`${this.prefix}[${timestamp}][${component}] ${message}`, data);
+    } else {
+      console.log(`${this.prefix}[${timestamp}][${component}] ${message}`);
+    }
+  }
+
+  error(component: string, message: string, error?: unknown) {
+    const timestamp = new Date().toISOString().slice(11, 23);
+    console.error(`${this.prefix}[${timestamp}][${component}] ${message}`, error ?? '');
+  }
+}
+
+export const logger = new Logger();
 
 export default class ElysiumPlugin extends Plugin {
   settings: ElysiumSettings;
@@ -34,9 +71,10 @@ export default class ElysiumPlugin extends Plugin {
   private isIndexing: boolean = false;
 
   async onload() {
-    console.log('Loading Elysium plugin');
-    
     await this.loadSettings();
+    logger.setEnabled(this.settings.debugMode);
+    logger.info('Plugin', 'Loading Elysium plugin');
+    
     await this.loadElysiumConfig();
     
     await this.initializeWasm();
@@ -54,19 +92,22 @@ export default class ElysiumPlugin extends Plugin {
       this.setupVaultWatcher();
     }
 
-    if (this.settings.indexOnStartup && this.indexer) {
-      this.app.workspace.onLayoutReady(async () => {
+    this.app.workspace.onLayoutReady(async () => {
+      logger.debug('Plugin', 'Layout ready, starting initialization sequence');
+      
+      if (this.settings.indexOnStartup && this.indexer) {
+        logger.debug('Plugin', 'Starting syncOnStartup');
         await this.syncOnStartup();
-      });
-    }
-
-    if (this.settings.showRelatedNotes) {
-      this.app.workspace.onLayoutReady(() => {
+        logger.debug('Plugin', 'syncOnStartup complete, indexCount:', this.getIndexCount());
+      }
+      
+      if (this.settings.showRelatedNotes) {
+        logger.debug('Plugin', 'Activating RelatedNotesView');
         this.activateRelatedNotesView();
-      });
-    }
+      }
+    });
 
-    console.log('Elysium plugin loaded');
+    logger.info('Plugin', 'Elysium plugin loaded');
   }
 
   private async loadElysiumConfig(): Promise<void> {
@@ -213,6 +254,11 @@ export default class ElysiumPlugin extends Plugin {
 
     if (leaf) {
       workspace.revealLeaf(leaf);
+      const view = leaf.view;
+      if (view instanceof RelatedNotesView) {
+        logger.debug('Plugin', 'Triggering RelatedNotesView update');
+        view.refresh();
+      }
     }
   }
 
@@ -825,6 +871,17 @@ class ElysiumSettingTab extends PluginSettingTab {
           } else {
             this.plugin.closeRelatedNotesView();
           }
+        }));
+
+    new Setting(containerEl)
+      .setName('Debug mode')
+      .setDesc('Enable verbose logging to console for troubleshooting')
+      .addToggle(toggle => toggle
+        .setValue(this.plugin.settings.debugMode)
+        .onChange(async (value) => {
+          this.plugin.settings.debugMode = value;
+          logger.setEnabled(value);
+          await this.plugin.saveSettings();
         }));
 
     containerEl.createEl('h3', { text: 'Schema' });

@@ -69,8 +69,14 @@ enum Commands {
     },
     Related {
         note: String,
-        #[arg(long, help = "Minimum shared tags")]
+        #[arg(long, short, help = "Use semantic search (gist-based AI similarity)")]
+        semantic: bool,
+        #[arg(long, help = "Minimum shared tags (tag mode only)")]
         min_tags: Option<usize>,
+        #[arg(long, short, help = "Limit results (semantic mode)")]
+        limit: Option<usize>,
+        #[arg(long, help = "JSON output")]
+        json: bool,
     },
     Tags {
         #[arg(short, long, help = "Analyze tags and suggest improvements")]
@@ -153,7 +159,9 @@ fn main() -> anyhow::Result<()> {
         Some(Commands::Status { brief, json }) => commands::status::run(brief, json),
         Some(Commands::Health { details, json }) => commands::health::run(details, json),
         Some(Commands::Search { query, gist, limit }) => commands::search::run(&query, gist, limit),
-        Some(Commands::Related { note, min_tags }) => commands::related::run(&note, min_tags),
+        Some(Commands::Related { note, semantic, min_tags, limit, json }) => {
+            commands::related::run(&note, min_tags, semantic, limit, json)
+        }
         Some(Commands::Tags { analyze, json }) => commands::tags::run(analyze, json),
         Some(Commands::Fix {
             wikilinks,

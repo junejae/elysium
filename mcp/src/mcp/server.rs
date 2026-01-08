@@ -175,26 +175,21 @@ struct NoteInfoJson {
 pub struct VaultService {
     vault_path: PathBuf,
     db_path: PathBuf,
-    model_path: PathBuf,
-    tool_router: ToolRouter<Self>,
 }
 
 impl VaultService {
     pub fn new(vault_path: PathBuf) -> Self {
         let tools_path = vault_path.join(".opencode/tools");
         let db_path = tools_path.join("data/search.db");
-        let model_path = tools_path.join("models/model.onnx"); // Not used with HTP
 
         Self {
             vault_path,
             db_path,
-            model_path,
-            tool_router: Self::tool_router(),
         }
     }
 
     fn get_engine(&self) -> Result<SearchEngine, McpError> {
-        SearchEngine::new(&self.vault_path, &self.db_path, &self.model_path)
+        SearchEngine::new(&self.vault_path, &self.db_path)
             .map_err(|e| McpError::internal_error(format!("Failed to create engine: {}", e), None))
     }
 

@@ -2,14 +2,13 @@
 //!
 //! Phase 1: gist-based semantic search
 
-use anyhow::{Context, Result};
-use std::path::{Path, PathBuf};
+use anyhow::Result;
+use std::path::Path;
 
 use super::embedding::EmbeddingModel;
 use super::vectordb::{IndexStats, NoteRecord, VectorDB};
 use crate::core::note::{collect_all_notes, Note};
 use crate::core::paths::VaultPaths;
-use std::path::PathBuf as StdPathBuf;
 
 /// Search result with note metadata and similarity score
 #[derive(Debug, Clone)]
@@ -48,57 +47,39 @@ pub struct IndexingStats {
 
 /// Search engine combining embedding model and vector database
 pub struct SearchEngine {
-    model: Option<EmbeddingModel>,
+    model: EmbeddingModel,
     db: VectorDB,
     vault_paths: VaultPaths,
-    model_path: PathBuf,
 }
 
 impl SearchEngine {
-    /// Create new search engine
-    ///
-    /// Note: Model is loaded lazily on first search/index operation
-    pub fn new(vault_path: &Path, db_path: &Path, model_path: &Path) -> Result<Self> {
+    /// Create new search engine with HTP (Harmonic Token Projection) embedding
+    pub fn new(vault_path: &Path, db_path: &Path) -> Result<Self> {
         let vault_paths = VaultPaths::from_root(vault_path.to_path_buf());
         let db = VectorDB::open(db_path)?;
 
         Ok(Self {
-            model: None,
+            model: EmbeddingModel::new(),
             db,
             vault_paths,
-            model_path: model_path.to_path_buf(),
         })
     }
 
     /// Create with in-memory database (for testing)
-    pub fn new_in_memory(vault_path: &Path, model_path: &Path) -> Result<Self> {
+    pub fn new_in_memory(vault_path: &Path) -> Result<Self> {
         let vault_paths = VaultPaths::from_root(vault_path.to_path_buf());
         let db = VectorDB::open_in_memory()?;
 
         Ok(Self {
-            model: None,
+            model: EmbeddingModel::new(),
             db,
             vault_paths,
-            model_path: model_path.to_path_buf(),
         })
-    }
-
-    /// Ensure model is loaded
-    fn ensure_model(&mut self) -> Result<&EmbeddingModel> {
-        if self.model.is_none() {
-            let model =
-                EmbeddingModel::load(&self.model_path).context("Failed to load embedding model")?;
-            self.model = Some(model);
-        }
-        Ok(self.model.as_ref().unwrap())
     }
 
     /// Search for notes similar to query
     pub fn search(&mut self, query: &str, limit: usize) -> Result<Vec<SearchResult>> {
-        let model = self.ensure_model()?;
-
-        // Generate query embedding
-        let query_embedding = model.embed(query)?;
+        let query_embedding = self.model.embed(query)?;
 
         // Search in vector database
         let results = self.db.search(&query_embedding, limit)?;
@@ -150,17 +131,12 @@ impl SearchEngine {
     ///
     /// Returns Ok(true) if indexed, Ok(false) if skipped (no gist)
     pub fn index_note(&mut self, note: &Note) -> Result<bool> {
-        // Skip notes without gist
         let gist = match note.gist() {
             Some(g) if !g.is_empty() => g,
             _ => return Ok(false),
         };
 
-        // Ensure model is loaded
-        let model = self.ensure_model()?;
-
-        // Generate embedding from gist
-        let embedding = model.embed(gist)?;
+        let embedding = self.model.embed(gist)?;
 
         // Create note record
         let record = NoteRecord {
@@ -184,18 +160,6 @@ impl SearchEngine {
     /// Get index statistics
     pub fn get_stats(&self) -> Result<IndexStats> {
         self.db.get_stats()
-    }
-
-    /// Check if model is available
-    pub fn model_exists(&self) -> bool {
-        self.model_path.exists()
-    }
-
-    /// Get database path
-    pub fn db_path(&self) -> &Path {
-        // We can't easily get this from rusqlite Connection
-        // This is a limitation - caller should track this
-        Path::new("")
     }
 }
 

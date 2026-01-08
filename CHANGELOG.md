@@ -7,6 +7,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-01-08
+
+### Fixed
+- **Plugin**: RelatedNotesView click navigation not working
+  - Changed from `openLinkText` to `getLeaf().openFile()` pattern
+  - Fixed timing issue where view opened before index was restored
+  - Added `refresh()` method to force update after sync
+
+### Added
+- **Plugin**: Debug mode setting for verbose logging
+  - New `Logger` class with component-based logging
+  - Toggle in settings to enable/disable debug output
+- **MCP**: `related --semantic` option for HTP-based similarity search
+  - Uses gist embeddings instead of tag overlap
+  - `--limit` flag to control result count
+  - `--json` output format
+
+### Changed
+- **MCP**: Simplified `SearchEngine` - removed ONNX model dependency
+  - HTP (Harmonic Token Projection) is now the only embedding method
+  - No external model download required
+  - Consistent with plugin's WASM implementation
+
 ## [0.4.0] - 2026-01-07
 
 ### Changed

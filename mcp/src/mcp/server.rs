@@ -652,11 +652,11 @@ impl VaultService {
             _ => "Notes",
         };
         let target = self.vault_path.join(folder);
-        
+
         if !target.exists() {
             let _ = std::fs::create_dir_all(&target);
         }
-        
+
         target
     }
 
@@ -665,9 +665,13 @@ impl VaultService {
         let target_folder = self.get_target_folder(params.note_type.as_deref());
         let note_path = target_folder.join(&filename);
         let root_path = self.vault_path.join(&filename);
-        
+
         if note_path.exists() || root_path.exists() {
-            let existing_path = if note_path.exists() { &note_path } else { &root_path };
+            let existing_path = if note_path.exists() {
+                &note_path
+            } else {
+                &root_path
+            };
             return Ok(CallToolResult::success(vec![Content::text(
                 serde_json::json!({
                     "success": false,

@@ -7,12 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [0.6.1] - 2026-01-08
+## [0.6.2] - 2026-01-08
 
 ### Fixed
 - **CI**: Binary version mismatch - built binaries now correctly report version from git tag
   - Added `Sync Cargo.toml version from tag` step in release workflow
   - Cargo.toml version is updated before build, ensuring `--version` output matches release
+- **CI**: Windows build failure - added PowerShell-compatible version sync script
 
 ## [0.6.0] - 2026-01-08
 

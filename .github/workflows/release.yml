@@ -38,13 +38,25 @@ jobs:
         with:
           workspaces: mcp
 
-      - name: Sync Cargo.toml version from tag
+      - name: Sync Cargo.toml version from tag (Unix)
+        if: matrix.os != 'windows-latest'
         run: |
           VERSION=${GITHUB_REF_NAME#v}
           sed -i.bak "s/^version = \".*\"/version = \"$VERSION\"/" Cargo.toml
           rm -f Cargo.toml.bak
           echo "Updated Cargo.toml to version $VERSION"
           grep "^version" Cargo.toml
+
+      - name: Sync Cargo.toml version from tag (Windows)
+        if: matrix.os == 'windows-latest'
+        shell: pwsh
+        run: |
+          $VERSION = "${{ github.ref_name }}" -replace '^v', ''
+          $content = Get-Content Cargo.toml -Raw
+          $content = $content -replace '^version = ".*"', "version = `"$VERSION`""
+          Set-Content Cargo.toml $content -NoNewline
+          Write-Host "Updated Cargo.toml to version $VERSION"
+          Select-String -Path Cargo.toml -Pattern '^version'
 
       - name: Build
         run: cargo build --release --target ${{ matrix.target }}

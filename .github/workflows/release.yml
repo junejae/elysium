@@ -38,6 +38,14 @@ jobs:
         with:
           workspaces: mcp
 
+      - name: Sync Cargo.toml version from tag
+        run: |
+          VERSION=${GITHUB_REF_NAME#v}
+          sed -i.bak "s/^version = \".*\"/version = \"$VERSION\"/" Cargo.toml
+          rm -f Cargo.toml.bak
+          echo "Updated Cargo.toml to version $VERSION"
+          grep "^version" Cargo.toml
+
       - name: Build
         run: cargo build --release --target ${{ matrix.target }}
 

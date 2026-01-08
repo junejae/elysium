@@ -187,6 +187,7 @@ struct NoteInfoJson {
 pub struct VaultService {
     vault_path: PathBuf,
     db_path: PathBuf,
+    tool_router: ToolRouter<Self>,
 }
 
 impl VaultService {
@@ -197,6 +198,7 @@ impl VaultService {
         Self {
             vault_path,
             db_path,
+            tool_router: Self::tool_router(),
         }
     }
 
@@ -1045,6 +1047,7 @@ impl VaultService {
     }
 }
 
+#[rmcp::tool_handler]
 impl ServerHandler for VaultService {
     fn get_info(&self) -> ServerInfo {
         ServerInfo {

@@ -6,7 +6,13 @@ use crate::core::note::collect_all_notes;
 use crate::core::paths::VaultPaths;
 use crate::search::engine::SearchEngine;
 
-pub fn run(note_name: &str, min_tags: Option<usize>, semantic: bool, limit: Option<usize>, json: bool) -> Result<()> {
+pub fn run(
+    note_name: &str,
+    min_tags: Option<usize>,
+    semantic: bool,
+    limit: Option<usize>,
+    json: bool,
+) -> Result<()> {
     let paths = VaultPaths::new();
     let notes = collect_all_notes(&paths);
 
@@ -52,14 +58,17 @@ fn run_semantic(target_note: &crate::core::note::Note, limit: usize, json: bool)
         if json {
             println!(r#"{{"error": "Semantic index not available. Run 'elysium index' first."}}"#);
         } else {
-            println!("{}", "Semantic index not available. Run 'elysium index' first.".yellow());
+            println!(
+                "{}",
+                "Semantic index not available. Run 'elysium index' first.".yellow()
+            );
         }
         return Ok(());
     }
 
     let mut engine = SearchEngine::new(&vault_path, &db_path)?;
     let results = engine.search(gist, limit + 1)?;
-    
+
     let filtered: Vec<_> = results
         .into_iter()
         .filter(|r| r.title != target_note.name)
@@ -145,7 +154,10 @@ fn run_tags(
         if json {
             println!(r#"{{"error": "Note has no tags."}}"#);
         } else {
-            println!("{}", format!("Note '{}' has no tags.", target_note.name).yellow());
+            println!(
+                "{}",
+                format!("Note '{}' has no tags.", target_note.name).yellow()
+            );
         }
         return Ok(());
     }

@@ -622,10 +622,7 @@ impl VaultService {
     #[tool(
         description = "Unified save interface for vault notes. Supports strategies: 'create' (new note), 'update' (overwrite), 'append' (add content), 'inbox' (quick capture), 'smart' (auto-detect duplicates)."
     )]
-    async fn vault_save(
-        &self,
-        params: Parameters<SaveParams>,
-    ) -> Result<CallToolResult, McpError> {
+    async fn vault_save(&self, params: Parameters<SaveParams>) -> Result<CallToolResult, McpError> {
         let strategy = params.0.strategy.to_lowercase();
 
         match strategy.as_str() {

@@ -7,6 +7,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-01-08
+
+### Added
+- **MCP**: `vault_save` - Unified save interface with strategy-based saving
+  - `strategy: create` - Create new note with frontmatter
+  - `strategy: update` - Overwrite existing note
+  - `strategy: append` - Add content to existing note
+  - `strategy: inbox` - Quick capture to inbox.md
+  - `strategy: smart` - Auto-detect duplicates using semantic search
+- **MCP**: `source` field support in frontmatter for web research notes
+- **MCP**: Similarity threshold parameter for smart save (default: 0.7)
+
+### Changed
+- **BREAKING**: Removed `vault_create_note` - use `vault_save(strategy="create")`
+- **BREAKING**: Removed `vault_quick_capture` - use `vault_save(strategy="inbox")`
+- **BREAKING**: Removed `vault_update_gist` - use `vault_save(strategy="update")`
+
+### Migration Guide
+```
+# Before (v0.5.0)
+vault_create_note(title="...", content="...")
+vault_quick_capture(content="...")
+
+# After (v0.6.0)
+vault_save(title="...", content="...", strategy="create")
+vault_save(title="memo", content="...", strategy="inbox")
+
+# New: Smart save with duplicate detection
+vault_save(title="...", content="...", gist="...", strategy="smart")
+```
+
 ## [0.5.0] - 2026-01-08
 
 ### Fixed

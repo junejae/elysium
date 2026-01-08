@@ -75,49 +75,61 @@ pub struct AuditParams {
     pub verbose: bool,
 }
 
-/// Parameters for vault_update_gist tool
+/// Parameters for unified vault_save tool
 #[derive(Debug, Deserialize, JsonSchema)]
-pub struct UpdateGistParams {
-    /// Note title or path
-    #[schemars(description = "Note title or path to update")]
-    pub note: String,
-    /// New gist content
-    #[schemars(description = "New gist summary (2-3 sentences)")]
-    pub gist: String,
-    /// Gist source (auto, ai, human)
-    #[schemars(description = "Gist source: auto, ai, or human")]
-    #[serde(default = "default_gist_source")]
-    pub source: String,
-}
-
-fn default_gist_source() -> String {
-    "ai".to_string()
-}
-
-#[derive(Debug, Deserialize, JsonSchema)]
-pub struct CreateNoteParams {
-    #[schemars(description = "Note title (will be used as filename)")]
+pub struct SaveParams {
+    /// Note title (used as filename for create, or to find existing note)
+    #[schemars(description = "Note title (filename for create, or search key for update/append)")]
     pub title: String,
-    #[schemars(description = "Note content (markdown)")]
+
+    /// Note content (markdown body, or memo for inbox strategy)
+    #[schemars(description = "Note content (markdown body)")]
     pub content: String,
+
+    /// Save strategy: create, update, append, inbox, smart
+    #[schemars(
+        description = "Save strategy: 'create' (new note), 'update' (overwrite existing), 'append' (add to existing), 'inbox' (quick capture), 'smart' (auto-detect duplicates)"
+    )]
+    #[serde(default = "default_strategy")]
+    pub strategy: String,
+
+    /// Note type: note, term, project, log
     #[schemars(description = "Note type: note, term, project, log")]
     #[serde(default)]
     pub note_type: Option<String>,
+
+    /// Note area: work, tech, life, career, learning, reference
     #[schemars(description = "Note area: work, tech, life, career, learning, reference")]
     #[serde(default)]
     pub area: Option<String>,
-    #[schemars(description = "Tags (comma-separated or array)")]
+
+    /// Tags (comma-separated)
+    #[schemars(description = "Tags (comma-separated, e.g., 'gpu, cuda, nvidia')")]
     #[serde(default)]
     pub tags: Option<String>,
-    #[schemars(description = "Gist summary (2-3 sentences)")]
+
+    /// Gist summary (2-3 sentences for semantic search)
+    #[schemars(description = "Gist summary (2-3 sentences for semantic search)")]
     #[serde(default)]
     pub gist: Option<String>,
+
+    /// Source URL (for web research notes)
+    #[schemars(description = "Source URL (for notes from web research)")]
+    #[serde(default)]
+    pub source: Option<String>,
+
+    /// Similarity threshold for smart strategy (default: 0.7)
+    #[schemars(description = "Similarity threshold for smart strategy (0.0-1.0, default: 0.7)")]
+    #[serde(default = "default_similarity_threshold")]
+    pub similarity_threshold: Option<f32>,
 }
 
-#[derive(Debug, Deserialize, JsonSchema)]
-pub struct QuickCaptureParams {
-    #[schemars(description = "Memo content to append to inbox")]
-    pub content: String,
+fn default_strategy() -> String {
+    "create".to_string()
+}
+
+fn default_similarity_threshold() -> Option<f32> {
+    Some(0.7)
 }
 
 #[derive(Debug, Serialize)]
@@ -607,109 +619,50 @@ impl VaultService {
         )]))
     }
 
-    /// Update gist for a specific note
     #[tool(
-        description = "Update the gist field for a note. Sets gist, gist_source (auto/ai/human), and gist_date in frontmatter."
+        description = "Unified save interface for vault notes. Supports strategies: 'create' (new note), 'update' (overwrite), 'append' (add content), 'inbox' (quick capture), 'smart' (auto-detect duplicates)."
     )]
-    async fn vault_update_gist(
+    async fn vault_save(
         &self,
-        params: Parameters<UpdateGistParams>,
+        params: Parameters<SaveParams>,
     ) -> Result<CallToolResult, McpError> {
-        let vault_paths = self.get_vault_paths();
-        let notes = collect_all_notes(&vault_paths);
-        let note_name = &params.0.note;
+        let strategy = params.0.strategy.to_lowercase();
 
-        let found = notes.into_iter().find(|n| {
-            n.name == *note_name
-                || n.path.to_string_lossy().contains(note_name)
-                || n.path.file_stem().map(|s| s.to_string_lossy().to_string())
-                    == Some(note_name.clone())
-        });
-
-        match found {
-            Some(note) => {
-                let content = std::fs::read_to_string(&note.path).map_err(|e| {
-                    McpError::internal_error(format!("Failed to read note: {}", e), None)
-                })?;
-
-                let today = chrono::Local::now().format("%Y-%m-%d").to_string();
-                let new_content = self.update_frontmatter_gist(
-                    &content,
-                    &params.0.gist,
-                    &params.0.source,
-                    &today,
-                );
-
-                std::fs::write(&note.path, &new_content).map_err(|e| {
-                    McpError::internal_error(format!("Failed to write note: {}", e), None)
-                })?;
-
-                Ok(CallToolResult::success(vec![Content::text(
-                    serde_json::json!({
-                        "success": true,
-                        "note": note.name,
-                        "gist": params.0.gist,
-                        "source": params.0.source,
-                        "date": today
-                    })
-                    .to_string(),
-                )]))
-            }
-            None => Ok(CallToolResult::success(vec![Content::text(
+        match strategy.as_str() {
+            "create" => self.save_create(&params.0).await,
+            "update" => self.save_update(&params.0).await,
+            "append" => self.save_append(&params.0).await,
+            "inbox" => self.save_inbox(&params.0).await,
+            "smart" => self.save_smart(&params.0).await,
+            _ => Ok(CallToolResult::success(vec![Content::text(
                 serde_json::json!({
                     "success": false,
-                    "error": format!("Note not found: {}", note_name)
+                    "error": format!("Unknown strategy: {}. Use: create, update, append, inbox, smart", strategy)
                 })
                 .to_string(),
             )])),
         }
     }
+}
 
-    #[tool(
-        description = "Create a new note in the vault root. Generates YAML frontmatter automatically."
-    )]
-    async fn vault_create_note(
-        &self,
-        params: Parameters<CreateNoteParams>,
-    ) -> Result<CallToolResult, McpError> {
-        let title = &params.0.title;
-        let filename = format!("{}.md", title);
+impl VaultService {
+    async fn save_create(&self, params: &SaveParams) -> Result<CallToolResult, McpError> {
+        let filename = format!("{}.md", params.title);
         let note_path = self.vault_path.join(&filename);
 
         if note_path.exists() {
             return Ok(CallToolResult::success(vec![Content::text(
                 serde_json::json!({
                     "success": false,
-                    "error": format!("Note already exists: {}", filename)
+                    "error": format!("Note already exists: {}", filename),
+                    "suggestion": "Use strategy='update' to overwrite or strategy='append' to add content"
                 })
                 .to_string(),
             )]));
         }
 
-        let mut frontmatter = String::from("---\n");
-
-        if let Some(t) = &params.0.note_type {
-            frontmatter.push_str(&format!("type: {}\n", t));
-        }
-        frontmatter.push_str("status: active\n");
-        if let Some(a) = &params.0.area {
-            frontmatter.push_str(&format!("area: {}\n", a));
-        }
-        if let Some(g) = &params.0.gist {
-            frontmatter.push_str(&format!("gist: >\n  {}\n", g));
-            frontmatter.push_str("gist_source: ai\n");
-            frontmatter.push_str(&format!(
-                "gist_date: {}\n",
-                chrono::Local::now().format("%Y-%m-%d")
-            ));
-        }
-        if let Some(tags) = &params.0.tags {
-            let tag_list: Vec<&str> = tags.split(',').map(|t| t.trim()).collect();
-            frontmatter.push_str(&format!("tags: [{}]\n", tag_list.join(", ")));
-        }
-        frontmatter.push_str("---\n\n");
-
-        let full_content = format!("{}# {}\n\n{}", frontmatter, title, params.0.content);
+        let frontmatter = self.build_frontmatter(params);
+        let full_content = format!("{}# {}\n\n{}", frontmatter, params.title, params.content);
 
         std::fs::write(&note_path, &full_content)
             .map_err(|e| McpError::internal_error(format!("Failed to create note: {}", e), None))?;
@@ -717,23 +670,111 @@ impl VaultService {
         Ok(CallToolResult::success(vec![Content::text(
             serde_json::json!({
                 "success": true,
+                "action": "created",
                 "path": note_path.to_string_lossy(),
-                "title": title
+                "title": params.title
             })
             .to_string(),
         )]))
     }
 
-    #[tool(description = "Append a memo to the inbox file for later processing.")]
-    async fn vault_quick_capture(
-        &self,
-        params: Parameters<QuickCaptureParams>,
-    ) -> Result<CallToolResult, McpError> {
+    async fn save_update(&self, params: &SaveParams) -> Result<CallToolResult, McpError> {
+        let vault_paths = self.get_vault_paths();
+        let notes = collect_all_notes(&vault_paths);
+
+        let found = notes.into_iter().find(|n| {
+            n.name == params.title
+                || n.path.file_stem().map(|s| s.to_string_lossy().to_string())
+                    == Some(params.title.clone())
+        });
+
+        match found {
+            Some(note) => {
+                let frontmatter = self.build_frontmatter(params);
+                let full_content =
+                    format!("{}# {}\n\n{}", frontmatter, params.title, params.content);
+
+                std::fs::write(&note.path, &full_content).map_err(|e| {
+                    McpError::internal_error(format!("Failed to update note: {}", e), None)
+                })?;
+
+                Ok(CallToolResult::success(vec![Content::text(
+                    serde_json::json!({
+                        "success": true,
+                        "action": "updated",
+                        "path": note.path.to_string_lossy(),
+                        "title": params.title
+                    })
+                    .to_string(),
+                )]))
+            }
+            None => Ok(CallToolResult::success(vec![Content::text(
+                serde_json::json!({
+                    "success": false,
+                    "error": format!("Note not found: {}", params.title),
+                    "suggestion": "Use strategy='create' to create a new note"
+                })
+                .to_string(),
+            )])),
+        }
+    }
+
+    async fn save_append(&self, params: &SaveParams) -> Result<CallToolResult, McpError> {
+        let vault_paths = self.get_vault_paths();
+        let notes = collect_all_notes(&vault_paths);
+
+        let found = notes.into_iter().find(|n| {
+            n.name == params.title
+                || n.path.file_stem().map(|s| s.to_string_lossy().to_string())
+                    == Some(params.title.clone())
+        });
+
+        match found {
+            Some(note) => {
+                let existing = std::fs::read_to_string(&note.path).map_err(|e| {
+                    McpError::internal_error(format!("Failed to read note: {}", e), None)
+                })?;
+
+                let new_content = format!("{}\n\n{}", existing.trim_end(), params.content);
+
+                std::fs::write(&note.path, &new_content).map_err(|e| {
+                    McpError::internal_error(format!("Failed to append to note: {}", e), None)
+                })?;
+
+                Ok(CallToolResult::success(vec![Content::text(
+                    serde_json::json!({
+                        "success": true,
+                        "action": "appended",
+                        "path": note.path.to_string_lossy(),
+                        "title": params.title
+                    })
+                    .to_string(),
+                )]))
+            }
+            None => Ok(CallToolResult::success(vec![Content::text(
+                serde_json::json!({
+                    "success": false,
+                    "error": format!("Note not found: {}", params.title),
+                    "suggestion": "Use strategy='create' to create a new note"
+                })
+                .to_string(),
+            )])),
+        }
+    }
+
+    async fn save_inbox(&self, params: &SaveParams) -> Result<CallToolResult, McpError> {
         let vault_paths = self.get_vault_paths();
         let inbox_path = vault_paths.config.resolve_paths(&self.vault_path).inbox;
 
-        let separator = "\n---\n\n";
-        let new_content = format!("{}{}", separator, params.0.content);
+        let timestamp = chrono::Local::now().format("%Y-%m-%d %H:%M").to_string();
+        let memo = if params.title.is_empty() || params.title == "inbox" {
+            format!("\n---\n\n**{}**\n\n{}", timestamp, params.content)
+        } else {
+            format!(
+                "\n---\n\n**{}** - {}\n\n{}",
+                timestamp, params.title, params.content
+            )
+        };
 
         let mut file = std::fs::OpenOptions::new()
             .create(true)
@@ -742,74 +783,93 @@ impl VaultService {
             .map_err(|e| McpError::internal_error(format!("Failed to open inbox: {}", e), None))?;
 
         use std::io::Write;
-        file.write_all(new_content.as_bytes()).map_err(|e| {
+        file.write_all(memo.as_bytes()).map_err(|e| {
             McpError::internal_error(format!("Failed to write to inbox: {}", e), None)
         })?;
 
         Ok(CallToolResult::success(vec![Content::text(
             serde_json::json!({
                 "success": true,
-                "message": "Memo added to inbox"
+                "action": "inbox_added",
+                "path": inbox_path.to_string_lossy(),
+                "timestamp": timestamp
             })
             .to_string(),
         )]))
     }
-}
 
-impl VaultService {
-    fn update_frontmatter_gist(
-        &self,
-        content: &str,
-        gist: &str,
-        source: &str,
-        date: &str,
-    ) -> String {
-        let fm_regex = regex::Regex::new(r"^---\s*\n([\s\S]*?)\n---").unwrap();
+    async fn save_smart(&self, params: &SaveParams) -> Result<CallToolResult, McpError> {
+        let threshold = params.similarity_threshold.unwrap_or(0.7);
+        let search_query = params.gist.as_deref().unwrap_or(&params.title);
 
-        if let Some(caps) = fm_regex.captures(content) {
-            let fm_content = caps.get(1).map(|m| m.as_str()).unwrap_or("");
-            let after_fm = &content[caps.get(0).unwrap().end()..];
+        let mut engine = self.get_engine()?;
+        let similar = engine
+            .search(search_query, 3)
+            .map_err(|e| McpError::internal_error(format!("Search failed: {}", e), None))?;
 
-            let mut new_fm = String::new();
-            let mut gist_added = false;
-            let mut source_added = false;
-            let mut date_added = false;
+        let high_similarity: Vec<_> = similar
+            .into_iter()
+            .filter(|r| r.score >= threshold)
+            .collect();
 
-            for line in fm_content.lines() {
-                if line.starts_with("gist:") {
-                    new_fm.push_str(&format!("gist: >\n  {}\n", gist));
-                    gist_added = true;
-                } else if line.starts_with("gist_source:") {
-                    new_fm.push_str(&format!("gist_source: {}\n", source));
-                    source_added = true;
-                } else if line.starts_with("gist_date:") {
-                    new_fm.push_str(&format!("gist_date: {}\n", date));
-                    date_added = true;
-                } else if line.starts_with("  ") && gist_added && !line.contains(':') {
-                    continue;
-                } else {
-                    new_fm.push_str(line);
-                    new_fm.push('\n');
-                }
-            }
-
-            if !gist_added {
-                new_fm.push_str(&format!("gist: >\n  {}\n", gist));
-            }
-            if !source_added {
-                new_fm.push_str(&format!("gist_source: {}\n", source));
-            }
-            if !date_added {
-                new_fm.push_str(&format!("gist_date: {}\n", date));
-            }
-
-            format!("---\n{}---{}", new_fm, after_fm)
-        } else {
-            format!(
-                "---\ngist: >\n  {}\ngist_source: {}\ngist_date: {}\n---\n{}",
-                gist, source, date, content
-            )
+        if high_similarity.is_empty() {
+            return self.save_create(params).await;
         }
+
+        let similar_notes: Vec<serde_json::Value> = high_similarity
+            .iter()
+            .map(|r| {
+                serde_json::json!({
+                    "title": r.title,
+                    "path": r.path,
+                    "similarity": format!("{:.0}%", r.score * 100.0),
+                    "gist": r.gist
+                })
+            })
+            .collect();
+
+        Ok(CallToolResult::success(vec![Content::text(
+            serde_json::json!({
+                "success": true,
+                "action": "needs_decision",
+                "similar_notes": similar_notes,
+                "suggestion": format!(
+                    "Found {} similar note(s). Options: strategy='create' to create anyway, strategy='append' with title='{}' to add to existing, or strategy='update' to overwrite.",
+                    high_similarity.len(),
+                    high_similarity[0].title
+                )
+            })
+            .to_string(),
+        )]))
+    }
+
+    fn build_frontmatter(&self, params: &SaveParams) -> String {
+        let mut fm = String::from("---\n");
+
+        if let Some(t) = &params.note_type {
+            fm.push_str(&format!("type: {}\n", t));
+        }
+        fm.push_str("status: active\n");
+        if let Some(a) = &params.area {
+            fm.push_str(&format!("area: {}\n", a));
+        }
+        if let Some(g) = &params.gist {
+            fm.push_str(&format!("gist: >\n  {}\n", g));
+            fm.push_str("gist_source: ai\n");
+            fm.push_str(&format!(
+                "gist_date: {}\n",
+                chrono::Local::now().format("%Y-%m-%d")
+            ));
+        }
+        if let Some(tags) = &params.tags {
+            let tag_list: Vec<&str> = tags.split(',').map(|t| t.trim()).collect();
+            fm.push_str(&format!("tags: [{}]\n", tag_list.join(", ")));
+        }
+        if let Some(source) = &params.source {
+            fm.push_str(&format!("source: {}\n", source));
+        }
+        fm.push_str("---\n\n");
+        fm
     }
 }
 

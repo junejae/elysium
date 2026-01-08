@@ -185,8 +185,32 @@ elysium mcp --install
 | `vault_status` | Get note counts by type/area |
 | `vault_audit` | Run policy compliance audit |
 | `vault_get_inbox` | Get inbox content with processing guide |
-| `vault_create_note` | Create note at vault root with frontmatter |
-| `vault_quick_capture` | Append memo to inbox file |
+| `vault_clear_inbox` | Clear inbox after processing |
+| `vault_save` | **Unified save interface** (see below) |
+| `vault_get_stale_gists` | Find notes with outdated gists |
+
+#### vault_save Strategies
+
+| Strategy | Description |
+|----------|-------------|
+| `create` | Create new note with frontmatter |
+| `update` | Overwrite existing note |
+| `append` | Add content to existing note |
+| `inbox` | Quick capture to inbox.md |
+| `smart` | Auto-detect duplicates, suggest action |
+
+Example:
+```json
+{
+  "title": "GPU MIG",
+  "content": "Multi-Instance GPU...",
+  "note_type": "term",
+  "area": "tech",
+  "gist": "GPU MIG allows...",
+  "source": "https://docs.nvidia.com/...",
+  "strategy": "smart"
+}
+```
 
 ### Claude Desktop Configuration
 

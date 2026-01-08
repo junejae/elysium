@@ -646,15 +646,32 @@ impl VaultService {
 }
 
 impl VaultService {
+    fn get_target_folder(&self, note_type: Option<&str>) -> PathBuf {
+        let folder = match note_type {
+            Some("project") => "Projects",
+            _ => "Notes",
+        };
+        let target = self.vault_path.join(folder);
+        
+        if !target.exists() {
+            let _ = std::fs::create_dir_all(&target);
+        }
+        
+        target
+    }
+
     async fn save_create(&self, params: &SaveParams) -> Result<CallToolResult, McpError> {
         let filename = format!("{}.md", params.title);
-        let note_path = self.vault_path.join(&filename);
-
-        if note_path.exists() {
+        let target_folder = self.get_target_folder(params.note_type.as_deref());
+        let note_path = target_folder.join(&filename);
+        let root_path = self.vault_path.join(&filename);
+        
+        if note_path.exists() || root_path.exists() {
+            let existing_path = if note_path.exists() { &note_path } else { &root_path };
             return Ok(CallToolResult::success(vec![Content::text(
                 serde_json::json!({
                     "success": false,
-                    "error": format!("Note already exists: {}", filename),
+                    "error": format!("Note already exists: {}", existing_path.to_string_lossy()),
                     "suggestion": "Use strategy='update' to overwrite or strategy='append' to add content"
                 })
                 .to_string(),
@@ -672,6 +689,7 @@ impl VaultService {
                 "success": true,
                 "action": "created",
                 "path": note_path.to_string_lossy(),
+                "folder": target_folder.file_name().unwrap_or_default().to_string_lossy(),
                 "title": params.title
             })
             .to_string(),

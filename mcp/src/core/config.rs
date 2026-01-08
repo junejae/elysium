@@ -83,10 +83,10 @@ fn default_areas() -> Vec<String> {
 
 fn default_required_fields() -> Vec<String> {
     vec![
-        "type".to_string(),
-        "status".to_string(),
-        "area".to_string(),
-        "gist".to_string(),
+        "elysium_type".to_string(),
+        "elysium_status".to_string(),
+        "elysium_area".to_string(),
+        "elysium_gist".to_string(),
     ]
 }
 

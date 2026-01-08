@@ -74,20 +74,20 @@ impl std::fmt::Display for SchemaViolation {
             Self::MissingFrontmatter => write!(f, "Missing YAML frontmatter"),
             Self::MissingField(field) => write!(f, "Missing required field: {}", field),
             Self::InvalidType(t) => {
-                write!(f, "Invalid type '{}' (must be: note|term|project|log)", t)
+                write!(f, "Invalid elysium_type '{}' (must be: note|term|project|log)", t)
             }
             Self::InvalidStatus(s) => {
-                write!(f, "Invalid status '{}' (must be: active|done|archived)", s)
+                write!(f, "Invalid elysium_status '{}' (must be: active|done|archived)", s)
             }
             Self::InvalidArea(a) => write!(
                 f,
-                "Invalid area '{}' (must be: work|tech|life|career|learning|reference)",
+                "Invalid elysium_area '{}' (must be: work|tech|life|career|learning|reference)",
                 a
             ),
-            Self::TooManyTags(n) => write!(f, "Too many tags: {} (max 5)", n),
+            Self::TooManyTags(n) => write!(f, "Too many elysium_tags: {} (max 5)", n),
             Self::HierarchicalTag(t) => write!(f, "Hierarchical tag not allowed: {}", t),
             Self::NonLowercaseTag(t) => write!(f, "Tag must be lowercase: {}", t),
-            Self::EmptyGist => write!(f, "Gist field is empty"),
+            Self::EmptyGist => write!(f, "elysium_gist field is empty"),
         }
     }
 }
@@ -123,7 +123,7 @@ impl SchemaValidator {
             types: default_types().iter().map(|s| s.to_string()).collect(),
             statuses: default_statuses().iter().map(|s| s.to_string()).collect(),
             areas: default_areas().iter().map(|s| s.to_string()).collect(),
-            required_fields: ["type", "status", "area", "gist"]
+            required_fields: ["elysium_type", "elysium_status", "elysium_area", "elysium_gist"]
                 .iter()
                 .map(|s| s.to_string())
                 .collect(),

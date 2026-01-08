@@ -505,8 +505,8 @@ impl VaultService {
                 "Create notes at vault root using vault_create_note",
                 "After all processing, call vault_clear_inbox"
             ],
-            "schema": {
-                "required_fields": ["type", "status", "area", "gist"],
+                "schema": {
+                "required_fields": ["elysium_type", "elysium_status", "elysium_area", "elysium_gist"],
                 "type_values": schema.types,
                 "status_values": schema.statuses,
                 "area_values": schema.areas
@@ -582,7 +582,7 @@ impl VaultService {
 
         let mut stale_notes: Vec<serde_json::Value> = Vec::new();
 
-        let gist_date_re = regex::Regex::new(r"(?m)^gist_date:\s*(\d{4}-\d{2}-\d{2})").unwrap();
+        let gist_date_re = regex::Regex::new(r"(?m)^elysium_gist_date:\s*(\d{4}-\d{2}-\d{2})").unwrap();
 
         for note in notes {
             let gist_date = note
@@ -846,23 +846,23 @@ impl VaultService {
         let mut fm = String::from("---\n");
 
         if let Some(t) = &params.note_type {
-            fm.push_str(&format!("type: {}\n", t));
+            fm.push_str(&format!("elysium_type: {}\n", t));
         }
-        fm.push_str("status: active\n");
+        fm.push_str("elysium_status: active\n");
         if let Some(a) = &params.area {
-            fm.push_str(&format!("area: {}\n", a));
+            fm.push_str(&format!("elysium_area: {}\n", a));
         }
         if let Some(g) = &params.gist {
-            fm.push_str(&format!("gist: >\n  {}\n", g));
-            fm.push_str("gist_source: ai\n");
+            fm.push_str(&format!("elysium_gist: >\n  {}\n", g));
+            fm.push_str("elysium_gist_source: ai\n");
             fm.push_str(&format!(
-                "gist_date: {}\n",
+                "elysium_gist_date: {}\n",
                 chrono::Local::now().format("%Y-%m-%d")
             ));
         }
         if let Some(tags) = &params.tags {
             let tag_list: Vec<&str> = tags.split(',').map(|t| t.trim()).collect();
-            fm.push_str(&format!("tags: [{}]\n", tag_list.join(", ")));
+            fm.push_str(&format!("elysium_tags: [{}]\n", tag_list.join(", ")));
         }
         if let Some(source) = &params.source {
             fm.push_str(&format!("source: {}\n", source));

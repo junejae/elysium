@@ -9,11 +9,11 @@ use super::schema::{SchemaValidator, SchemaViolation, VALID_AREAS, VALID_STATUS,
 
 lazy_static! {
     static ref FRONTMATTER_RE: Regex = Regex::new(r"(?s)^---\r?\n(.*?)\r?\n---").unwrap();
-    static ref TYPE_RE: Regex = Regex::new(r"(?m)^type:\s*(\w+)").unwrap();
-    static ref STATUS_RE: Regex = Regex::new(r"(?m)^status:\s*(\w+)").unwrap();
-    static ref AREA_RE: Regex = Regex::new(r"(?m)^area:\s*(\w+)").unwrap();
-    static ref GIST_RE: Regex = Regex::new(r"(?m)^gist:\s*(.*)").unwrap();
-    static ref TAGS_RE: Regex = Regex::new(r"(?m)^tags:\s*\[(.*?)\]").unwrap();
+    static ref TYPE_RE: Regex = Regex::new(r"(?m)^elysium_type:\s*(\w+)").unwrap();
+    static ref STATUS_RE: Regex = Regex::new(r"(?m)^elysium_status:\s*(\w+)").unwrap();
+    static ref AREA_RE: Regex = Regex::new(r"(?m)^elysium_area:\s*(\w+)").unwrap();
+    static ref GIST_RE: Regex = Regex::new(r"(?m)^elysium_gist:\s*(.*)").unwrap();
+    static ref TAGS_RE: Regex = Regex::new(r"(?m)^elysium_tags:\s*\[(.*?)\]").unwrap();
 }
 
 #[derive(Debug, Default, Clone)]
@@ -53,7 +53,7 @@ impl Frontmatter {
 
             if gist_start == ">" || gist_start == "|" || gist_start.is_empty() {
                 let lines: Vec<&str> = raw.lines().collect();
-                let gist_line_idx = lines.iter().position(|l| l.starts_with("gist:"))?;
+                let gist_line_idx = lines.iter().position(|l| l.starts_with("elysium_gist:"))?;
 
                 let mut folded_content = Vec::new();
                 for line in lines.iter().skip(gist_line_idx + 1) {
@@ -107,7 +107,7 @@ impl Frontmatter {
         let mut violations = Vec::new();
 
         match &self.note_type {
-            None => violations.push(SchemaViolation::MissingField("type".to_string())),
+            None => violations.push(SchemaViolation::MissingField("elysium_type".to_string())),
             Some(t) if !VALID_TYPES.contains(t.as_str()) => {
                 violations.push(SchemaViolation::InvalidType(t.clone()))
             }
@@ -115,7 +115,7 @@ impl Frontmatter {
         }
 
         match &self.status {
-            None => violations.push(SchemaViolation::MissingField("status".to_string())),
+            None => violations.push(SchemaViolation::MissingField("elysium_status".to_string())),
             Some(s) if !VALID_STATUS.contains(s.as_str()) => {
                 violations.push(SchemaViolation::InvalidStatus(s.clone()))
             }
@@ -123,7 +123,7 @@ impl Frontmatter {
         }
 
         match &self.area {
-            None => violations.push(SchemaViolation::MissingField("area".to_string())),
+            None => violations.push(SchemaViolation::MissingField("elysium_area".to_string())),
             Some(a) if !VALID_AREAS.contains(a.as_str()) => {
                 violations.push(SchemaViolation::InvalidArea(a.clone()))
             }
@@ -131,7 +131,7 @@ impl Frontmatter {
         }
 
         if self.gist.is_none() {
-            violations.push(SchemaViolation::MissingField("gist".to_string()));
+            violations.push(SchemaViolation::MissingField("elysium_gist".to_string()));
         }
 
         if self.tags.len() > 5 {
@@ -155,9 +155,9 @@ impl Frontmatter {
         let mut violations = Vec::new();
 
         // Type validation
-        if validator.is_required("type") {
+        if validator.is_required("elysium_type") {
             match &self.note_type {
-                None => violations.push(SchemaViolation::MissingField("type".to_string())),
+                None => violations.push(SchemaViolation::MissingField("elysium_type".to_string())),
                 Some(t) if !validator.is_valid_type(t) => {
                     violations.push(SchemaViolation::InvalidType(t.clone()))
                 }
@@ -166,9 +166,9 @@ impl Frontmatter {
         }
 
         // Status validation
-        if validator.is_required("status") {
+        if validator.is_required("elysium_status") {
             match &self.status {
-                None => violations.push(SchemaViolation::MissingField("status".to_string())),
+                None => violations.push(SchemaViolation::MissingField("elysium_status".to_string())),
                 Some(s) if !validator.is_valid_status(s) => {
                     violations.push(SchemaViolation::InvalidStatus(s.clone()))
                 }
@@ -177,9 +177,9 @@ impl Frontmatter {
         }
 
         // Area validation
-        if validator.is_required("area") {
+        if validator.is_required("elysium_area") {
             match &self.area {
-                None => violations.push(SchemaViolation::MissingField("area".to_string())),
+                None => violations.push(SchemaViolation::MissingField("elysium_area".to_string())),
                 Some(a) if !validator.is_valid_area(a) => {
                     violations.push(SchemaViolation::InvalidArea(a.clone()))
                 }
@@ -188,8 +188,8 @@ impl Frontmatter {
         }
 
         // Gist validation
-        if validator.is_required("gist") && self.gist.is_none() {
-            violations.push(SchemaViolation::MissingField("gist".to_string()));
+        if validator.is_required("elysium_gist") && self.gist.is_none() {
+            violations.push(SchemaViolation::MissingField("elysium_gist".to_string()));
         }
 
         // Tag count validation

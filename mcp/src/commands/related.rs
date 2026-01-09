@@ -33,7 +33,13 @@ pub fn run(
     };
 
     if semantic {
-        run_semantic(target_note, limit.unwrap_or(10), boost_type, boost_area, json)
+        run_semantic(
+            target_note,
+            limit.unwrap_or(10),
+            boost_type,
+            boost_area,
+            json,
+        )
     } else {
         run_tags(target_note, &notes, min_tags, json)
     }
@@ -77,7 +83,7 @@ fn run_semantic(
     }
 
     let mut engine = SearchEngine::new(&vault_path, &db_path)?;
-    
+
     let results = if boost_type || boost_area {
         let boost = BoostOptions::from_source(
             target_note.note_type(),

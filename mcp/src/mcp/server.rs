@@ -311,7 +311,8 @@ impl VaultService {
             Some(g) if !g.is_empty() => g,
             _ => {
                 return Ok(CallToolResult::success(vec![Content::text(
-                    serde_json::json!({"error": "Note has no gist for semantic search"}).to_string(),
+                    serde_json::json!({"error": "Note has no gist for semantic search"})
+                        .to_string(),
                 )]));
             }
         };
@@ -684,7 +685,7 @@ impl VaultService {
     fn get_target_folder(&self, note_type: Option<&str>) -> PathBuf {
         let vault_paths = self.get_vault_paths();
         let folders = &vault_paths.config.folders;
-        
+
         let folder = match note_type {
             Some("project") => &folders.projects,
             _ => &folders.notes,
@@ -1132,10 +1133,7 @@ impl VaultService {
                         if gist_date < modified_date {
                             errors.push(AuditErrorJson {
                                 note: note.name.clone(),
-                                message: format!(
-                                    "Stale gist: {} < {}",
-                                    gist_date, modified_date
-                                ),
+                                message: format!("Stale gist: {} < {}", gist_date, modified_date),
                             });
                         }
                     }

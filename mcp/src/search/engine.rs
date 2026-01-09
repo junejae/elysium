@@ -31,7 +31,12 @@ pub struct BoostOptions {
 }
 
 impl BoostOptions {
-    pub fn from_source(note_type: Option<&str>, area: Option<&str>, boost_type: bool, boost_area: bool) -> Self {
+    pub fn from_source(
+        note_type: Option<&str>,
+        area: Option<&str>,
+        boost_type: bool,
+        boost_area: bool,
+    ) -> Self {
         Self {
             boost_type,
             boost_area,
@@ -39,7 +44,7 @@ impl BoostOptions {
             source_area: area.map(String::from),
         }
     }
-    
+
     pub fn is_enabled(&self) -> bool {
         self.boost_type || self.boost_area
     }
@@ -135,7 +140,11 @@ impl SearchEngine {
             })
             .collect();
 
-        results.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
+        results.sort_by(|a, b| {
+            b.score
+                .partial_cmp(&a.score)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
         results.truncate(limit);
         Ok(results)
     }
@@ -215,11 +224,7 @@ impl SearchEngine {
     }
 }
 
-fn compute_boosted_score(
-    semantic_score: f32,
-    candidate: &NoteRecord,
-    boost: &BoostOptions,
-) -> f32 {
+fn compute_boosted_score(semantic_score: f32, candidate: &NoteRecord, boost: &BoostOptions) -> f32 {
     const SEMANTIC_WEIGHT: f32 = 0.7;
     const METADATA_WEIGHT: f32 = 0.3;
     const TYPE_BOOST: f32 = 0.5;

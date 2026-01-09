@@ -171,7 +171,9 @@ fn main() -> anyhow::Result<()> {
             boost_type,
             boost_area,
             json,
-        }) => commands::related::run(&note, min_tags, semantic, limit, boost_type, boost_area, json),
+        }) => commands::related::run(
+            &note, min_tags, semantic, limit, boost_type, boost_area, json,
+        ),
         Some(Commands::Tags { analyze, json }) => commands::tags::run(analyze, json),
         Some(Commands::Fix {
             wikilinks,

@@ -41,6 +41,72 @@ echo "Version: $VERSION"
 echo "Tag: $TAG"
 echo ""
 
+# ==== VERSION SYNC FUNCTION ====
+sync_versions() {
+    echo "=== Syncing versions to $VERSION ==="
+
+    local CHANGES_MADE=false
+
+    # 1. Sync mcp/Cargo.toml
+    if [[ -f mcp/Cargo.toml ]]; then
+        sed -i.bak "s/^version = \".*\"/version = \"$VERSION\"/" mcp/Cargo.toml
+        rm -f mcp/Cargo.toml.bak
+        echo "  - mcp/Cargo.toml: synced"
+        CHANGES_MADE=true
+    fi
+
+    # 2. Sync npm/package.json
+    if [[ -f npm/package.json ]]; then
+        node -e "
+            const fs = require('fs');
+            const pkg = JSON.parse(fs.readFileSync('npm/package.json', 'utf8'));
+            pkg.version = '$VERSION';
+            fs.writeFileSync('npm/package.json', JSON.stringify(pkg, null, 2) + '\n');
+        "
+        echo "  - npm/package.json: synced"
+        CHANGES_MADE=true
+    fi
+
+    # 3. Sync plugin/manifest.json
+    if [[ -f plugin/manifest.json ]]; then
+        node -e "
+            const fs = require('fs');
+            const m = JSON.parse(fs.readFileSync('plugin/manifest.json', 'utf8'));
+            m.version = '$VERSION';
+            fs.writeFileSync('plugin/manifest.json', JSON.stringify(m, null, 2) + '\n');
+        "
+        echo "  - plugin/manifest.json: synced"
+        CHANGES_MADE=true
+    fi
+
+    # 4. Sync plugin/package.json
+    if [[ -f plugin/package.json ]]; then
+        node -e "
+            const fs = require('fs');
+            const pkg = JSON.parse(fs.readFileSync('plugin/package.json', 'utf8'));
+            pkg.version = '$VERSION';
+            fs.writeFileSync('plugin/package.json', JSON.stringify(pkg, null, 2) + '\n');
+        "
+        echo "  - plugin/package.json: synced"
+        CHANGES_MADE=true
+    fi
+
+    # Check if any files were actually changed
+    if [[ -n $(git status --porcelain) ]]; then
+        echo ""
+        echo "Changes detected, committing version sync..."
+        git add mcp/Cargo.toml npm/package.json plugin/manifest.json plugin/package.json
+        git commit -m "chore: sync versions to $VERSION"
+        echo -e "${GREEN}Version sync committed${NC}"
+    else
+        echo "All versions already in sync."
+    fi
+    echo ""
+}
+
+# Sync versions before any checks
+sync_versions
+
 # Check if we're on main branch
 CURRENT_BRANCH=$(git branch --show-current)
 if [[ "$CURRENT_BRANCH" != "main" ]]; then

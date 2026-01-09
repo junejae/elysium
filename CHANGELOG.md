@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.2.0] - 2026-01-09
+
+### Added
+- **Release**: Unified version management across all components
+  - `sync_versions()` function in `release.sh` syncs VERSION to all component files
+  - Single source of truth: `/VERSION` file
+  - Components synced: `plugin/manifest.json`, `plugin/package.json`, `mcp/Cargo.toml`, `npm/package.json`
+  - Version sync runs automatically before git tag creation
+
+### Changed
+- **Plugin**: Version aligned to match MCP/npm (0.9.0 → 1.2.0)
+  - All components now share the same version number
+  - Simplifies release tracking and compatibility
+
 ## [1.1.0] - 2026-01-09
 
 ### Removed

@@ -212,7 +212,9 @@ pub struct SuggestTagsParams {
     pub similar_count: usize,
 
     /// Minimum frequency threshold (default: 2)
-    #[schemars(description = "Minimum number of occurrences for a tag to be suggested (default: 2)")]
+    #[schemars(
+        description = "Minimum number of occurrences for a tag to be suggested (default: 2)"
+    )]
     #[serde(default = "default_min_frequency")]
     pub min_frequency: usize,
 }

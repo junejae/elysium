@@ -260,6 +260,7 @@ fn bytes_to_embedding(bytes: &[u8]) -> Vec<f32> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use super::super::embedder::EMBEDDING_DIM;
 
     #[test]
     fn test_embedding_conversion() {

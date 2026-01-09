@@ -96,6 +96,19 @@ enum Commands {
         #[arg(long, help = "JSON output")]
         json: bool,
     },
+    /// Connect orphan notes to related notes via wikilinks
+    Connect {
+        #[arg(long, help = "Actually apply connections (default: dry-run)")]
+        execute: bool,
+        #[arg(long, help = "Minimum shared tags for connection (default: 1)")]
+        min_tags: Option<usize>,
+        #[arg(short, long, help = "Use semantic search instead of tags")]
+        semantic: bool,
+        #[arg(short, long, help = "Max connections per orphan (default: 5)")]
+        limit: Option<usize>,
+        #[arg(long, help = "JSON output")]
+        json: bool,
+    },
 
     // ===== Semantic Search =====
     /// Build semantic search index
@@ -180,6 +193,13 @@ fn main() -> anyhow::Result<()> {
             execute,
             json,
         }) => commands::fix::run(wikilinks, !execute, json),
+        Some(Commands::Connect {
+            execute,
+            min_tags,
+            semantic,
+            limit,
+            json,
+        }) => commands::connect::run(!execute, min_tags, semantic, limit, json),
 
         // Semantic Search
         Some(Commands::Index {

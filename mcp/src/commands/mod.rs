@@ -1,4 +1,5 @@
 pub mod audit;
+pub mod connect;
 pub mod fix;
 pub mod health;
 pub mod index;

@@ -1,6 +1,6 @@
 import { App, TFile, Notice } from 'obsidian';
 import { SchemaRecommendation } from '../config/VaultScanner';
-import { GistConfig } from '../config/ElysiumConfig';
+import { GistConfig, FIELD_NAMES } from '../config/ElysiumConfig';
 
 export type GistSource = 'human' | 'auto' | 'ai';
 
@@ -61,12 +61,9 @@ export class MigrationEngine {
     this.recommendation = recommendation;
     this.gistConfig = gistConfig ?? {
       enabled: false,
-      fieldName: 'gist',
       autoGenerate: true,
       maxLength: 200,
       trackSource: true,
-      sourceFieldName: 'gist_source',
-      dateFieldName: 'gist_date',
     };
   }
 
@@ -109,7 +106,7 @@ export class MigrationEngine {
       let content: string | null = null;
       const needsContent = this.gistConfig.enabled && 
                           this.gistConfig.autoGenerate && 
-                          !frontmatter?.[this.recommendation.gistField.recommendedName];
+                          !frontmatter?.[FIELD_NAMES.GIST];
       
       if (needsContent) {
         content = await this.app.vault.cachedRead(file);
@@ -121,13 +118,13 @@ export class MigrationEngine {
         filesToModify.push(modification);
 
         for (const change of modification.changes) {
-          if (change.field === this.recommendation.typeField.recommendedName) {
+          if (change.field === FIELD_NAMES.TYPE) {
             if (change.action === 'add') summary.addType++;
             else if (change.action === 'update') summary.updateType++;
-          } else if (change.field === this.recommendation.areaField.recommendedName) {
+          } else if (change.field === FIELD_NAMES.AREA) {
             if (change.action === 'add') summary.addArea++;
             else if (change.action === 'update') summary.updateArea++;
-          } else if (change.field === this.recommendation.gistField.recommendedName) {
+          } else if (change.field === FIELD_NAMES.GIST) {
             if (change.action === 'add') summary.addGist++;
           }
         }
@@ -161,24 +158,24 @@ export class MigrationEngine {
         const mappedValue = typeRec.valueMapping.get(currentValue);
         if (mappedValue && mappedValue !== currentValue) {
           changes.push({
-            field: typeRec.recommendedName,
+            field: FIELD_NAMES.TYPE,
             action: 'update',
             oldValue: currentValue,
             newValue: mappedValue,
             reason: `Mapping "${currentValue}" to standardized value "${mappedValue}"`,
           });
         }
-      } else if (!frontmatter[typeRec.recommendedName]) {
+      } else if (!frontmatter[FIELD_NAMES.TYPE]) {
         changes.push({
-          field: typeRec.recommendedName,
+          field: FIELD_NAMES.TYPE,
           action: 'add',
           newValue: 'note',
           reason: 'Adding default type field',
         });
       }
-    } else if (!hasFrontmatter || !frontmatter?.[typeRec.recommendedName]) {
+    } else if (!hasFrontmatter || !frontmatter?.[FIELD_NAMES.TYPE]) {
       changes.push({
-        field: typeRec.recommendedName,
+        field: FIELD_NAMES.TYPE,
         action: 'add',
         newValue: 'note',
         reason: 'Adding default type field',
@@ -192,7 +189,7 @@ export class MigrationEngine {
         const mappedValue = areaRec.valueMapping.get(currentValue);
         if (mappedValue && mappedValue !== currentValue) {
           changes.push({
-            field: areaRec.recommendedName,
+            field: FIELD_NAMES.AREA,
             action: 'update',
             oldValue: currentValue,
             newValue: mappedValue,
@@ -205,7 +202,7 @@ export class MigrationEngine {
     if (this.gistConfig.enabled && this.gistConfig.autoGenerate && content) {
       const gistRec = this.recommendation.gistField;
       const hasGist = frontmatter && (
-        frontmatter[gistRec.recommendedName] || 
+        frontmatter[FIELD_NAMES.GIST] || 
         (gistRec.existingField && frontmatter[gistRec.existingField])
       );
       
@@ -213,7 +210,7 @@ export class MigrationEngine {
         const generatedGist = this.generateGistFromContent(content);
         if (generatedGist) {
           changes.push({
-            field: gistRec.recommendedName,
+            field: FIELD_NAMES.GIST,
             action: 'add',
             newValue: generatedGist,
             reason: 'Auto-generated from first paragraph',
@@ -221,13 +218,13 @@ export class MigrationEngine {
 
           if (this.gistConfig.trackSource) {
             changes.push({
-              field: this.gistConfig.sourceFieldName,
+              field: FIELD_NAMES.GIST_SOURCE,
               action: 'add',
               newValue: 'auto',
               reason: 'Tracking gist source',
             });
             changes.push({
-              field: this.gistConfig.dateFieldName,
+              field: FIELD_NAMES.GIST_DATE,
               action: 'add',
               newValue: new Date().toISOString().split('T')[0],
               reason: 'Tracking gist creation date',
@@ -325,12 +322,10 @@ export class MigrationEngine {
   }
 
   private applyChanges(content: string, mod: FileModification): string {
-    const gistFieldName = this.gistConfig.fieldName;
-    
     if (mod.needsNewFrontmatter) {
       const frontmatterLines = ['---'];
       for (const change of mod.changes) {
-        if (change.field === gistFieldName) {
+        if (change.field === FIELD_NAMES.GIST) {
           frontmatterLines.push(`${change.field}: >`);
           frontmatterLines.push(`  ${change.newValue}`);
         } else {
@@ -351,7 +346,7 @@ export class MigrationEngine {
 
     for (const change of mod.changes) {
       if (change.action === 'add') {
-        if (change.field === gistFieldName) {
+        if (change.field === FIELD_NAMES.GIST) {
           frontmatterContent += `\n${change.field}: >\n  ${change.newValue}`;
         } else {
           frontmatterContent += `\n${change.field}: ${change.newValue}`;

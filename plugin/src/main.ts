@@ -615,24 +615,24 @@ class ElysiumSearchModal extends Modal {
     if (!config) return;
 
     const filterContainer = container.createDiv({ cls: 'elysium-filter-container' });
-    const filterableFieldKeys = config.getFilterableFieldKeys();
+    
+    const filterConfigs = [
+      { key: 'type', label: 'Type', values: config.getTypeValues() },
+      { key: 'area', label: 'Area', values: config.getAreaValues() },
+    ];
 
-    for (const fieldKey of filterableFieldKeys) {
-      const fieldConfig = config.getFieldConfig(fieldKey);
-      if (!fieldConfig) continue;
-
+    for (const { key, label, values } of filterConfigs) {
       const row = filterContainer.createDiv({ cls: 'elysium-filter-row' });
-      const label = fieldKey.charAt(0).toUpperCase() + fieldKey.slice(1);
       row.createEl('span', { text: `${label}:`, cls: 'elysium-filter-label' });
       
       const buttonGroup = row.createDiv({ cls: 'elysium-filter-group' });
       
       const allBtn = buttonGroup.createEl('button', { text: 'All', cls: 'elysium-filter-btn is-active' });
-      allBtn.addEventListener('click', () => this.setFilter(fieldKey, undefined, buttonGroup));
+      allBtn.addEventListener('click', () => this.setFilter(key, undefined, buttonGroup));
 
-      for (const value of fieldConfig.values) {
+      for (const value of values) {
         const btn = buttonGroup.createEl('button', { text: value, cls: 'elysium-filter-btn' });
-        btn.addEventListener('click', () => this.setFilter(fieldKey, value, buttonGroup));
+        btn.addEventListener('click', () => this.setFilter(key, value, buttonGroup));
       }
     }
   }
@@ -701,16 +701,14 @@ class ElysiumSearchModal extends Modal {
     const filters: Record<string, string> = {};
     let processedInput = input;
     
-    const config = this.plugin.elysiumConfig;
-    if (config) {
-      for (const fieldKey of config.getFilterableFieldKeys()) {
-        const regex = new RegExp(`${fieldKey}:(\\S+)`, 'g');
-        const match = input.match(regex);
-        if (match) {
-          const valueMatch = match[0].match(new RegExp(`${fieldKey}:(\\S+)`));
-          if (valueMatch) filters[fieldKey] = valueMatch[1];
-          processedInput = processedInput.replace(regex, '');
-        }
+    const filterKeys = ['type', 'status', 'area'];
+    for (const fieldKey of filterKeys) {
+      const regex = new RegExp(`${fieldKey}:(\\S+)`, 'g');
+      const match = input.match(regex);
+      if (match) {
+        const valueMatch = match[0].match(new RegExp(`${fieldKey}:(\\S+)`));
+        if (valueMatch) filters[fieldKey] = valueMatch[1];
+        processedInput = processedInput.replace(regex, '');
       }
     }
     
@@ -744,7 +742,7 @@ class ElysiumSearchModal extends Modal {
       if (!filters[key]) filters[key] = value;
     }
     
-    const hasFilters = Object.values(filters).some(v => v) || tag;
+    const hasFilters = Object.values(filters).some(v => v) || !!tag;
 
     let results: Array<{ path: string; score: number; gist: string | null; fields: Record<string, string>; tags?: string[] }>;
     
@@ -889,33 +887,13 @@ class ElysiumSettingTab extends PluginSettingTab {
     const config = this.plugin.elysiumConfig;
     if (config) {
       new Setting(containerEl)
-        .setName('Type field')
-        .setDesc('Frontmatter field name for note type')
-        .addText(text => text
-          .setValue(config.getTypeFieldName())
-          .onChange(async (value) => {
-            config.updateSchema({ fields: { type: { name: value, values: config.getTypeValues() } } } as any);
-            await config.save();
-          }));
-
-      new Setting(containerEl)
         .setName('Type values')
         .setDesc('Valid type values (comma-separated)')
         .addText(text => text
           .setValue(config.getTypeValues().join(', '))
           .onChange(async (value) => {
             const values = value.split(',').map(v => v.trim()).filter(v => v);
-            config.updateSchema({ fields: { type: { name: config.getTypeFieldName(), values } } } as any);
-            await config.save();
-          }));
-
-      new Setting(containerEl)
-        .setName('Area field')
-        .setDesc('Frontmatter field name for note area')
-        .addText(text => text
-          .setValue(config.getAreaFieldName())
-          .onChange(async (value) => {
-            config.updateSchema({ fields: { area: { name: value, values: config.getAreaValues() } } } as any);
+            config.updateTypeValues(values);
             await config.save();
           }));
 
@@ -926,7 +904,7 @@ class ElysiumSettingTab extends PluginSettingTab {
           .setValue(config.getAreaValues().join(', '))
           .onChange(async (value) => {
             const values = value.split(',').map(v => v.trim()).filter(v => v);
-            config.updateSchema({ fields: { area: { name: config.getAreaFieldName(), values } } } as any);
+            config.updateAreaValues(values);
             await config.save();
           }));
 
@@ -949,16 +927,6 @@ class ElysiumSettingTab extends PluginSettingTab {
           }));
 
       if (gistConfig.enabled) {
-        new Setting(containerEl)
-          .setName('Field name')
-          .setDesc('Frontmatter field name for gist')
-          .addText(text => text
-            .setValue(gistConfig.fieldName)
-            .onChange(async (value) => {
-              config.updateGistConfig({ fieldName: value });
-              await config.save();
-            }));
-
         new Setting(containerEl)
           .setName('Auto-generate')
           .setDesc('Extract summary from first paragraph when gist is missing')

@@ -28,7 +28,6 @@ export interface VaultAnalysis {
 export interface SchemaRecommendation {
   typeField: {
     existingField: string | null;
-    recommendedName: string;
     existingValues: string[];
     recommendedValues: string[];
     valueMapping: Map<string, string>;
@@ -36,7 +35,6 @@ export interface SchemaRecommendation {
   };
   areaField: {
     existingField: string | null;
-    recommendedName: string;
     existingValues: string[];
     recommendedValues: string[];
     valueMapping: Map<string, string>;
@@ -44,13 +42,11 @@ export interface SchemaRecommendation {
   };
   gistField: {
     existingField: string | null;
-    recommendedName: string;
     notesWithoutGist: number;
     needsGeneration: boolean;
   };
   tagsField: {
     existingField: string | null;
-    recommendedName: string;
   };
   migrationStats: {
     notesNeedingTypeUpdate: number;
@@ -166,7 +162,6 @@ export class VaultScanner {
     if (!existing) {
       return {
         existingField: null,
-        recommendedName: 'type',
         existingValues: [],
         recommendedValues: DEFAULT_TYPE_VALUES,
         valueMapping: new Map(),
@@ -177,10 +172,9 @@ export class VaultScanner {
     const existingValues = [...existing.values.keys()];
     const isClean = !existing.isHighCardinality && existingValues.length <= 10;
 
-    if (isClean && existing.name === 'type') {
+    if (isClean && existing.name === 'elysium_type') {
       return {
         existingField: existing.name,
-        recommendedName: 'type',
         existingValues,
         recommendedValues: existingValues,
         valueMapping: new Map(existingValues.map(v => [v, v])),
@@ -192,7 +186,6 @@ export class VaultScanner {
     
     return {
       existingField: existing.name,
-      recommendedName: 'type',
       existingValues,
       recommendedValues: DEFAULT_TYPE_VALUES,
       valueMapping,
@@ -206,7 +199,6 @@ export class VaultScanner {
     if (!existing) {
       return {
         existingField: null,
-        recommendedName: 'area',
         existingValues: [],
         recommendedValues: DEFAULT_AREA_VALUES,
         valueMapping: new Map(),
@@ -217,10 +209,9 @@ export class VaultScanner {
     const existingValues = [...existing.values.keys()];
     const isClean = !existing.isHighCardinality && existingValues.length <= 15;
 
-    if (isClean && existing.name === 'area') {
+    if (isClean && existing.name === 'elysium_area') {
       return {
         existingField: existing.name,
-        recommendedName: 'area',
         existingValues,
         recommendedValues: existingValues,
         valueMapping: new Map(existingValues.map(v => [v, v])),
@@ -232,7 +223,6 @@ export class VaultScanner {
     
     return {
       existingField: existing.name,
-      recommendedName: 'area',
       existingValues,
       recommendedValues: DEFAULT_AREA_VALUES,
       valueMapping,
@@ -249,7 +239,6 @@ export class VaultScanner {
 
     return {
       existingField: existing?.name ?? null,
-      recommendedName: 'gist',
       notesWithoutGist,
       needsGeneration: notesWithoutGist > 0,
     };
@@ -260,7 +249,6 @@ export class VaultScanner {
     
     return {
       existingField: existing?.name ?? null,
-      recommendedName: 'tags',
     };
   }
 

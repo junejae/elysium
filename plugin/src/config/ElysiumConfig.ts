@@ -1,26 +1,32 @@
 import { App } from 'obsidian';
 
+export const FIELD_NAMES = {
+  TYPE: 'elysium_type',
+  STATUS: 'elysium_status',
+  AREA: 'elysium_area',
+  GIST: 'elysium_gist',
+  TAGS: 'elysium_tags',
+  GIST_SOURCE: 'elysium_gist_source',
+  GIST_DATE: 'elysium_gist_date',
+} as const;
+
+export const DEFAULT_TYPE_VALUES = ['note', 'term', 'project', 'log'] as const;
+export const DEFAULT_STATUS_VALUES = ['active', 'done', 'archived'] as const;
+export const DEFAULT_AREA_VALUES = ['work', 'tech', 'life', 'career', 'learning', 'reference'] as const;
+
 export interface GistConfig {
   enabled: boolean;
-  fieldName: string;
   autoGenerate: boolean;
   maxLength: number;
   trackSource: boolean;
-  sourceFieldName: string;
-  dateFieldName: string;
-}
-
-export interface FilterableField {
-  name: string;
-  values: string[];
-  filterable: boolean;
-  required: boolean;
 }
 
 export interface SchemaConfig {
-  filterableFields: Record<string, FilterableField>;
+  typeValues: string[];
+  statusValues: string[];
+  areaValues: string[];
   gist: GistConfig;
-  tags: { name: string; maxCount: number; lowercase: boolean };
+  tags: { maxCount: number; lowercase: boolean };
 }
 
 export interface FoldersConfig {
@@ -44,22 +50,18 @@ export interface ElysiumConfigData {
 }
 
 const DEFAULT_CONFIG: ElysiumConfigData = {
-  version: 2,
+  version: 3,
   schema: {
-    filterableFields: {
-      type: { name: 'type', values: ['note', 'term', 'project', 'log'], filterable: true, required: true },
-      area: { name: 'area', values: ['work', 'tech', 'life', 'career', 'learning', 'reference'], filterable: true, required: true },
-    },
+    typeValues: [...DEFAULT_TYPE_VALUES],
+    statusValues: [...DEFAULT_STATUS_VALUES],
+    areaValues: [...DEFAULT_AREA_VALUES],
     gist: {
       enabled: false,
-      fieldName: 'gist',
       autoGenerate: true,
       maxLength: 200,
       trackSource: true,
-      sourceFieldName: 'gist_source',
-      dateFieldName: 'gist_date',
     },
-    tags: { name: 'tags', maxCount: 5, lowercase: true },
+    tags: { maxCount: 5, lowercase: true },
   },
   folders: {
     notes: 'Notes',
@@ -134,61 +136,40 @@ export class ElysiumConfig {
     return await this.app.vault.adapter.exists(this.legacyConfigPath);
   }
 
-  private migrateFromV1(parsed: any): Record<string, FilterableField> {
-    const filterableFields: Record<string, FilterableField> = {};
-    const oldFields = parsed.schema?.fields;
-    const oldValidation = parsed.schema?.validation;
-
-    if (oldFields?.type) {
-      filterableFields.type = {
-        name: oldFields.type.name ?? 'type',
-        values: oldFields.type.values ?? DEFAULT_CONFIG.schema.filterableFields.type.values,
-        filterable: true,
-        required: oldValidation?.requireType ?? true,
-      };
-    }
-    if (oldFields?.area) {
-      filterableFields.area = {
-        name: oldFields.area.name ?? 'area',
-        values: oldFields.area.values ?? DEFAULT_CONFIG.schema.filterableFields.area.values,
-        filterable: true,
-        required: oldValidation?.requireArea ?? true,
-      };
-    }
-
-    return filterableFields;
-  }
-
-  private mergeWithDefaults(parsed: Partial<ElysiumConfigData>): ElysiumConfigData {
+  private mergeWithDefaults(parsed: any): ElysiumConfigData {
     const parsedGist = parsed.schema?.gist as Partial<GistConfig> | undefined;
-    
-    let filterableFields: Record<string, FilterableField>;
-    if (parsed.schema?.filterableFields) {
-      filterableFields = { ...DEFAULT_CONFIG.schema.filterableFields, ...parsed.schema.filterableFields };
-    } else if ((parsed as any).schema?.fields) {
-      filterableFields = { ...DEFAULT_CONFIG.schema.filterableFields, ...this.migrateFromV1(parsed) };
-    } else {
-      filterableFields = { ...DEFAULT_CONFIG.schema.filterableFields };
+    const oldValidation = (parsed as any).schema?.validation;
+    const parsedTags = parsed.schema?.tags ?? (parsed as any).schema?.fields?.tags;
+
+    let typeValues = [...DEFAULT_CONFIG.schema.typeValues];
+    let statusValues = [...DEFAULT_CONFIG.schema.statusValues];
+    let areaValues = [...DEFAULT_CONFIG.schema.areaValues];
+
+    if (parsed.version === 3 && parsed.schema) {
+      typeValues = parsed.schema.typeValues ?? typeValues;
+      statusValues = parsed.schema.statusValues ?? statusValues;
+      areaValues = parsed.schema.areaValues ?? areaValues;
+    } else if (parsed.version === 2 && parsed.schema?.filterableFields) {
+      typeValues = parsed.schema.filterableFields.type?.values ?? typeValues;
+      areaValues = parsed.schema.filterableFields.area?.values ?? areaValues;
+    } else if (parsed.schema?.fields) {
+      typeValues = parsed.schema.fields.type?.values ?? typeValues;
+      areaValues = parsed.schema.fields.area?.values ?? areaValues;
     }
 
-    const parsedTags = parsed.schema?.tags ?? (parsed as any).schema?.fields?.tags;
-    const oldValidation = (parsed as any).schema?.validation;
-    
     return {
-      version: 2,
+      version: 3,
       schema: {
-        filterableFields,
+        typeValues,
+        statusValues,
+        areaValues,
         gist: {
           enabled: parsedGist?.enabled ?? DEFAULT_CONFIG.schema.gist.enabled,
-          fieldName: parsedGist?.fieldName ?? DEFAULT_CONFIG.schema.gist.fieldName,
           autoGenerate: parsedGist?.autoGenerate ?? DEFAULT_CONFIG.schema.gist.autoGenerate,
           maxLength: parsedGist?.maxLength ?? DEFAULT_CONFIG.schema.gist.maxLength,
           trackSource: parsedGist?.trackSource ?? DEFAULT_CONFIG.schema.gist.trackSource,
-          sourceFieldName: parsedGist?.sourceFieldName ?? DEFAULT_CONFIG.schema.gist.sourceFieldName,
-          dateFieldName: parsedGist?.dateFieldName ?? DEFAULT_CONFIG.schema.gist.dateFieldName,
         },
         tags: {
-          name: parsedTags?.name ?? DEFAULT_CONFIG.schema.tags.name,
           maxCount: parsedTags?.maxCount ?? oldValidation?.maxTags ?? DEFAULT_CONFIG.schema.tags.maxCount,
           lowercase: parsedTags?.lowercase ?? oldValidation?.lowercaseTags ?? DEFAULT_CONFIG.schema.tags.lowercase,
         },
@@ -217,63 +198,28 @@ export class ElysiumConfig {
     return this.config.schema;
   }
 
-  getFilterableFields(): Record<string, FilterableField> {
-    return this.config.schema.filterableFields;
-  }
-
-  getFilterableFieldKeys(): string[] {
-    return Object.entries(this.config.schema.filterableFields)
-      .filter(([_, field]) => field.filterable)
-      .map(([key]) => key);
-  }
-
-  getFieldConfig(key: string): FilterableField | undefined {
-    return this.config.schema.filterableFields[key];
-  }
-
-  getFieldName(key: string): string {
-    return this.config.schema.filterableFields[key]?.name ?? key;
-  }
-
-  getFieldValues(key: string): string[] {
-    return this.config.schema.filterableFields[key]?.values ?? [];
-  }
-
-  addFilterableField(key: string, field: FilterableField): void {
-    this.config.schema.filterableFields[key] = field;
-  }
-
-  updateFilterableField(key: string, updates: Partial<FilterableField>): void {
-    if (this.config.schema.filterableFields[key]) {
-      this.config.schema.filterableFields[key] = {
-        ...this.config.schema.filterableFields[key],
-        ...updates,
-      };
-    }
-  }
-
-  removeFilterableField(key: string): void {
-    delete this.config.schema.filterableFields[key];
-  }
-
-  getTypeFieldName(): string {
-    return this.getFieldName('type');
-  }
-
   getTypeValues(): string[] {
-    return this.getFieldValues('type');
+    return this.config.schema.typeValues;
   }
 
-  getAreaFieldName(): string {
-    return this.getFieldName('area');
+  updateTypeValues(values: string[]): void {
+    this.config.schema.typeValues = values;
+  }
+
+  getStatusValues(): string[] {
+    return this.config.schema.statusValues;
+  }
+
+  updateStatusValues(values: string[]): void {
+    this.config.schema.statusValues = values;
   }
 
   getAreaValues(): string[] {
-    return this.getFieldValues('area');
+    return this.config.schema.areaValues;
   }
 
-  getGistFieldName(): string {
-    return this.config.schema.gist.fieldName;
+  updateAreaValues(values: string[]): void {
+    this.config.schema.areaValues = values;
   }
 
   getGistConfig(): GistConfig {
@@ -288,15 +234,11 @@ export class ElysiumConfig {
     this.config.schema.gist = { ...this.config.schema.gist, ...gist };
   }
 
-  getTagsFieldName(): string {
-    return this.config.schema.tags.name;
-  }
-
-  getTagsConfig(): { name: string; maxCount: number; lowercase: boolean } {
+  getTagsConfig(): { maxCount: number; lowercase: boolean } {
     return this.config.schema.tags;
   }
 
-  updateTagsConfig(tags: Partial<{ name: string; maxCount: number; lowercase: boolean }>): void {
+  updateTagsConfig(tags: Partial<{ maxCount: number; lowercase: boolean }>): void {
     this.config.schema.tags = { ...this.config.schema.tags, ...tags };
   }
 

@@ -1,7 +1,7 @@
 import { App, TFile } from 'obsidian';
 import { HnswIndex } from '../wasm-pkg/elysium_wasm';
 import { IndexedDbStorage, NoteRecord } from '../storage/IndexedDbStorage';
-import { ElysiumConfig } from '../config/ElysiumConfig';
+import { ElysiumConfig, FIELD_NAMES } from '../config/ElysiumConfig';
 
 const isExcludedPath = (path: string): boolean => {
   return path.split('/').some(part => part.startsWith('.'));
@@ -212,33 +212,33 @@ export class Indexer {
     const frontmatter = match[1];
     const result: { gist?: string; fields: Record<string, string>; tags?: string[] } = { fields: {} };
     
-    const gistFieldName = this.config?.getGistFieldName() ?? 'gist';
-    const gistBlockRegex = new RegExp(`${gistFieldName}:\\s*>\\s*\\n([\\s\\S]*?)(?=\\n[a-zA-Z_]+:|$)`);
+    const gistBlockRegex = new RegExp(`${FIELD_NAMES.GIST}:\\s*>\\s*\\n([\\s\\S]*?)(?=\\n[a-zA-Z_]+:|$)`);
     const gistBlockMatch = frontmatter.match(gistBlockRegex);
     if (gistBlockMatch) {
       result.gist = gistBlockMatch[1].trim().replace(/\n\s*/g, ' ');
     } else {
-      const gistInlineRegex = new RegExp(`${gistFieldName}:\\s*["']?([^"'\\n]+)["']?`);
+      const gistInlineRegex = new RegExp(`${FIELD_NAMES.GIST}:\\s*["']?([^"'\\n]+)["']?`);
       const gistInlineMatch = frontmatter.match(gistInlineRegex);
       if (gistInlineMatch) {
         result.gist = gistInlineMatch[1].trim();
       }
     }
 
-    if (this.config) {
-      const filterableFields = this.config.getFilterableFields();
-      for (const [key, fieldConfig] of Object.entries(filterableFields)) {
-        const fieldName = fieldConfig.name;
-        const fieldRegex = new RegExp(`${fieldName}:\\s*["']?([^"'\\n\\[\\]]+)["']?`);
-        const fieldMatch = frontmatter.match(fieldRegex);
-        if (fieldMatch) {
-          result.fields[key] = fieldMatch[1].trim();
-        }
+    const fieldMappings: Array<[string, string]> = [
+      ['type', FIELD_NAMES.TYPE],
+      ['status', FIELD_NAMES.STATUS],
+      ['area', FIELD_NAMES.AREA],
+    ];
+
+    for (const [key, fieldName] of fieldMappings) {
+      const fieldRegex = new RegExp(`${fieldName}:\\s*["']?([^"'\\n\\[\\]]+)["']?`);
+      const fieldMatch = frontmatter.match(fieldRegex);
+      if (fieldMatch) {
+        result.fields[key] = fieldMatch[1].trim();
       }
     }
 
-    const tagsFieldName = this.config?.getTagsFieldName() ?? 'tags';
-    const tagsRegex = new RegExp(`${tagsFieldName}:\\s*\\[([^\\]]*)\\]`);
+    const tagsRegex = new RegExp(`${FIELD_NAMES.TAGS}:\\s*\\[([^\\]]*)\\]`);
     const tagsMatch = frontmatter.match(tagsRegex);
     if (tagsMatch) {
       result.tags = tagsMatch[1]

@@ -1,7 +1,7 @@
 import { App, Modal, Setting, Notice } from 'obsidian';
 import { VaultScanner, VaultAnalysis, SchemaRecommendation } from '../config/VaultScanner';
 import { MigrationEngine, MigrationPlan, MigrationProgress } from '../migration/MigrationEngine';
-import { ElysiumConfig, GistConfig } from '../config/ElysiumConfig';
+import { ElysiumConfig, GistConfig, FIELD_NAMES } from '../config/ElysiumConfig';
 
 type WizardStep = 'welcome' | 'analyzing' | 'review' | 'mapping' | 'preview' | 'migrating' | 'inbox' | 'complete';
 
@@ -172,8 +172,8 @@ export class SetupWizard extends Modal {
     
     const recEl = contentEl.createDiv({ cls: 'elysium-wizard-recommendation' });
     
-    this.renderFieldRecommendation(recEl, 'Type Field', this.recommendation.typeField);
-    this.renderFieldRecommendation(recEl, 'Area Field', this.recommendation.areaField);
+    this.renderFieldRecommendation(recEl, 'Type Field', this.recommendation.typeField, FIELD_NAMES.TYPE);
+    this.renderFieldRecommendation(recEl, 'Area Field', this.recommendation.areaField, FIELD_NAMES.AREA);
     this.renderGistSection(recEl, this.recommendation.gistField);
 
     const migrationSummary = contentEl.createDiv({ cls: 'elysium-wizard-migration-summary' });
@@ -260,7 +260,8 @@ export class SetupWizard extends Modal {
   private renderFieldRecommendation(
     container: HTMLElement, 
     label: string, 
-    rec: SchemaRecommendation['typeField'] | SchemaRecommendation['areaField']
+    rec: SchemaRecommendation['typeField'] | SchemaRecommendation['areaField'],
+    fieldName: string
   ) {
     const fieldEl = container.createDiv({ cls: 'elysium-wizard-field-rec' });
     fieldEl.createEl('h4', { text: label });
@@ -270,7 +271,7 @@ export class SetupWizard extends Modal {
       
       if (rec.needsMigration) {
         fieldEl.createEl('p', { 
-          text: `→ Recommend standardizing to "${rec.recommendedName}" with ${rec.recommendedValues.length} values`,
+          text: `→ Will migrate to "${fieldName}" with ${rec.recommendedValues.length} values`,
           cls: 'recommendation'
         });
         
@@ -283,7 +284,7 @@ export class SetupWizard extends Modal {
     } else {
       fieldEl.createEl('p', { text: 'Not found in your vault' });
       fieldEl.createEl('p', { 
-        text: `→ Will add "${rec.recommendedName}" field`,
+        text: `→ Will add "${fieldName}" field`,
         cls: 'recommendation'
       });
     }
@@ -324,6 +325,12 @@ export class SetupWizard extends Modal {
 
     if (rec.existingField) {
       container.createEl('p', { text: `Found existing field: "${rec.existingField}"` });
+      if (rec.existingField !== FIELD_NAMES.GIST) {
+        container.createEl('p', { 
+          text: `→ Will migrate to "${FIELD_NAMES.GIST}"`,
+          cls: 'recommendation'
+        });
+      }
       if (rec.notesWithoutGist > 0) {
         container.createEl('p', { 
           text: `${rec.notesWithoutGist} notes missing gist`,
@@ -611,24 +618,10 @@ export class SetupWizard extends Modal {
 
   private async finishSetup() {
     if (this.recommendation) {
-      this.config.updateSchema({
-        fields: {
-          type: {
-            name: this.recommendation.typeField.recommendedName,
-            values: this.recommendation.typeField.recommendedValues,
-          },
-          area: {
-            name: this.recommendation.areaField.recommendedName,
-            values: this.recommendation.areaField.recommendedValues,
-          },
-          tags: {
-            name: this.recommendation.tagsField.recommendedName,
-          },
-        },
-      });
+      this.config.updateTypeValues(this.recommendation.typeField.recommendedValues);
+      this.config.updateAreaValues(this.recommendation.areaField.recommendedValues);
     }
 
-    this.gistSettings.fieldName = this.recommendation?.gistField.recommendedName ?? 'gist';
     this.config.updateGistConfig(this.gistSettings);
 
     try {

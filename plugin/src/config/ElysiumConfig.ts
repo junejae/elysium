@@ -17,6 +17,12 @@ export interface GistConfig {
   maxLength: number;
 }
 
+export interface AdvancedSemanticSearchConfig {
+  enabled: boolean;
+  modelDownloaded: boolean;
+  modelPath: string | null;
+}
+
 export interface SchemaConfig {
   typeValues: string[];
   statusValues: string[];
@@ -42,11 +48,12 @@ export interface ElysiumConfigData {
   features: {
     semanticSearch: boolean;
     wikilinkValidation: boolean;
+    advancedSemanticSearch: AdvancedSemanticSearchConfig;
   };
 }
 
 const DEFAULT_CONFIG: ElysiumConfigData = {
-  version: 3,
+  version: 4,
   schema: {
     typeValues: [...DEFAULT_TYPE_VALUES],
     statusValues: [...DEFAULT_STATUS_VALUES],
@@ -69,6 +76,11 @@ const DEFAULT_CONFIG: ElysiumConfigData = {
   features: {
     semanticSearch: true,
     wikilinkValidation: true,
+    advancedSemanticSearch: {
+      enabled: false,
+      modelDownloaded: false,
+      modelPath: null,
+    },
   },
 };
 
@@ -139,7 +151,8 @@ export class ElysiumConfig {
     let statusValues = [...DEFAULT_CONFIG.schema.statusValues];
     let areaValues = [...DEFAULT_CONFIG.schema.areaValues];
 
-    if (parsed.version === 3 && parsed.schema) {
+    // Handle v3 and v4 schemas (same structure for schema fields)
+    if ((parsed.version === 3 || parsed.version === 4) && parsed.schema) {
       typeValues = parsed.schema.typeValues ?? typeValues;
       statusValues = parsed.schema.statusValues ?? statusValues;
       areaValues = parsed.schema.areaValues ?? areaValues;
@@ -151,8 +164,11 @@ export class ElysiumConfig {
       areaValues = parsed.schema.fields.area?.values ?? areaValues;
     }
 
+    // Handle advancedSemanticSearch (new in v4, may not exist in v3 or earlier)
+    const parsedAdvanced = parsed.features?.advancedSemanticSearch as Partial<AdvancedSemanticSearchConfig> | undefined;
+
     return {
-      version: 3,
+      version: 4,
       schema: {
         typeValues,
         statusValues,
@@ -178,6 +194,11 @@ export class ElysiumConfig {
       features: {
         semanticSearch: parsed.features?.semanticSearch ?? DEFAULT_CONFIG.features.semanticSearch,
         wikilinkValidation: parsed.features?.wikilinkValidation ?? DEFAULT_CONFIG.features.wikilinkValidation,
+        advancedSemanticSearch: {
+          enabled: parsedAdvanced?.enabled ?? DEFAULT_CONFIG.features.advancedSemanticSearch.enabled,
+          modelDownloaded: parsedAdvanced?.modelDownloaded ?? DEFAULT_CONFIG.features.advancedSemanticSearch.modelDownloaded,
+          modelPath: parsedAdvanced?.modelPath ?? DEFAULT_CONFIG.features.advancedSemanticSearch.modelPath,
+        },
       },
     };
   }
@@ -264,6 +285,29 @@ export class ElysiumConfig {
 
   updateFoldersConfig(folders: Partial<FoldersConfig>): void {
     this.config.folders = { ...this.config.folders, ...folders };
+  }
+
+  getAdvancedSemanticSearchConfig(): AdvancedSemanticSearchConfig {
+    return this.config.features.advancedSemanticSearch;
+  }
+
+  isAdvancedSemanticSearchEnabled(): boolean {
+    return this.config.features.advancedSemanticSearch.enabled;
+  }
+
+  isModelDownloaded(): boolean {
+    return this.config.features.advancedSemanticSearch.modelDownloaded;
+  }
+
+  getModelPath(): string | null {
+    return this.config.features.advancedSemanticSearch.modelPath;
+  }
+
+  updateAdvancedSemanticSearchConfig(config: Partial<AdvancedSemanticSearchConfig>): void {
+    this.config.features.advancedSemanticSearch = {
+      ...this.config.features.advancedSemanticSearch,
+      ...config,
+    };
   }
 
   static getDefault(): ElysiumConfigData {

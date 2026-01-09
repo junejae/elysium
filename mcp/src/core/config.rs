@@ -181,6 +181,28 @@ pub struct FeatureConfig {
 
     #[serde(default = "default_true")]
     pub wikilinks: bool,
+
+    #[serde(default, rename = "semanticSearch")]
+    pub semantic_search: bool,
+
+    #[serde(default, rename = "wikilinkValidation")]
+    pub wikilink_validation: bool,
+
+    #[serde(default, rename = "advancedSemanticSearch")]
+    pub advanced_semantic_search: AdvancedSemanticSearchConfig,
+}
+
+/// Configuration for advanced semantic search (Model2Vec)
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct AdvancedSemanticSearchConfig {
+    #[serde(default)]
+    pub enabled: bool,
+
+    #[serde(default, rename = "modelDownloaded")]
+    pub model_downloaded: bool,
+
+    #[serde(default, rename = "modelPath")]
+    pub model_path: Option<String>,
 }
 
 fn default_inbox() -> String {
@@ -192,6 +214,25 @@ impl Default for FeatureConfig {
         Self {
             inbox: default_inbox(),
             wikilinks: true,
+            semantic_search: true,
+            wikilink_validation: true,
+            advanced_semantic_search: AdvancedSemanticSearchConfig::default(),
+        }
+    }
+}
+
+impl FeatureConfig {
+    /// Check if advanced semantic search is enabled and model is available
+    pub fn is_advanced_search_ready(&self) -> bool {
+        self.advanced_semantic_search.enabled && self.advanced_semantic_search.model_downloaded
+    }
+
+    /// Get model path for advanced search
+    pub fn get_model_path(&self) -> Option<&str> {
+        if self.is_advanced_search_ready() {
+            self.advanced_semantic_search.model_path.as_deref()
+        } else {
+            None
         }
     }
 }

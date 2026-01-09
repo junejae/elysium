@@ -5,7 +5,7 @@
 use anyhow::Result;
 use std::path::Path;
 
-use super::embedding::EmbeddingModel;
+use super::embedder::{create_embedder, Embedder, SearchConfig};
 use super::vectordb::{IndexStats, NoteRecord, VectorDB};
 use crate::core::note::{collect_all_notes, Note};
 use crate::core::paths::VaultPaths;
@@ -75,19 +75,25 @@ pub struct IndexingStats {
 
 /// Search engine combining embedding model and vector database
 pub struct SearchEngine {
-    model: EmbeddingModel,
+    embedder: Box<dyn Embedder>,
     db: VectorDB,
     vault_paths: VaultPaths,
 }
 
 impl SearchEngine {
-    /// Create new search engine with HTP (Harmonic Token Projection) embedding
+    /// Create new search engine with default (HTP) embedding
     pub fn new(vault_path: &Path, db_path: &Path) -> Result<Self> {
+        Self::with_config(vault_path, db_path, SearchConfig::default())
+    }
+
+    /// Create new search engine with specified configuration
+    pub fn with_config(vault_path: &Path, db_path: &Path, config: SearchConfig) -> Result<Self> {
         let vault_paths = VaultPaths::from_root(vault_path.to_path_buf());
-        let db = VectorDB::open(db_path)?;
+        let embedder = create_embedder(&config)?;
+        let db = VectorDB::open(db_path, embedder.dimension())?;
 
         Ok(Self {
-            model: EmbeddingModel::new(),
+            embedder,
             db,
             vault_paths,
         })
@@ -96,17 +102,28 @@ impl SearchEngine {
     /// Create with in-memory database (for testing)
     pub fn new_in_memory(vault_path: &Path) -> Result<Self> {
         let vault_paths = VaultPaths::from_root(vault_path.to_path_buf());
-        let db = VectorDB::open_in_memory()?;
+        let embedder = create_embedder(&SearchConfig::default())?;
+        let db = VectorDB::open_in_memory_with_dim(embedder.dimension())?;
 
         Ok(Self {
-            model: EmbeddingModel::new(),
+            embedder,
             db,
             vault_paths,
         })
     }
 
+    /// Get current embedder name
+    pub fn embedder_name(&self) -> &str {
+        self.embedder.name()
+    }
+
+    /// Get embedding dimension
+    pub fn embedding_dimension(&self) -> usize {
+        self.embedder.dimension()
+    }
+
     pub fn search(&mut self, query: &str, limit: usize) -> Result<Vec<SearchResult>> {
-        let query_embedding = self.model.embed(query)?;
+        let query_embedding = self.embedder.embed(query)?;
         let results = self.db.search(&query_embedding, limit)?;
         Ok(results.into_iter().map(SearchResult::from).collect())
     }
@@ -121,7 +138,7 @@ impl SearchEngine {
             return self.search(query, limit);
         }
 
-        let query_embedding = self.model.embed(query)?;
+        let query_embedding = self.embedder.embed(query)?;
         let raw_results = self.db.search(&query_embedding, limit * 2)?;
 
         let mut results: Vec<SearchResult> = raw_results
@@ -197,7 +214,7 @@ impl SearchEngine {
             _ => return Ok(false),
         };
 
-        let embedding = self.model.embed(gist)?;
+        let embedding = self.embedder.embed(gist)?;
 
         // Create note record
         let record = NoteRecord {

@@ -194,6 +194,37 @@ pub struct TagsAnalyzeParams {
     pub threshold: f32,
 }
 
+/// Parameters for vault_suggest_tags (advanced search based)
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct SuggestTagsParams {
+    /// Note title or path to analyze
+    #[schemars(description = "Note title or path to find similar notes and suggest tags from")]
+    pub note: String,
+
+    /// Maximum number of tag suggestions (default: 5)
+    #[schemars(description = "Maximum number of tag suggestions (default: 5)")]
+    #[serde(default = "default_tag_limit")]
+    pub limit: usize,
+
+    /// Number of similar notes to analyze (default: 10)
+    #[schemars(description = "Number of similar notes to analyze for tags (default: 10)")]
+    #[serde(default = "default_similar_notes")]
+    pub similar_count: usize,
+
+    /// Minimum frequency threshold (default: 2)
+    #[schemars(description = "Minimum number of occurrences for a tag to be suggested (default: 2)")]
+    #[serde(default = "default_min_frequency")]
+    pub min_frequency: usize,
+}
+
+fn default_similar_notes() -> usize {
+    10
+}
+
+fn default_min_frequency() -> usize {
+    2
+}
+
 fn default_merge_threshold() -> f32 {
     0.7
 }
@@ -273,7 +304,23 @@ impl VaultService {
     }
 
     fn get_engine(&self) -> Result<SearchEngine, McpError> {
-        SearchEngine::new(&self.vault_path, &self.db_path)
+        use crate::search::SearchConfig;
+
+        // Load config to check for advanced search settings
+        let config = crate::core::config::Config::load(&self.vault_path);
+        let search_config = SearchConfig {
+            use_advanced: config.features.is_advanced_search_ready(),
+            model_path: config.features.get_model_path().map(|p| {
+                // If path is relative, resolve it from vault root
+                if p.starts_with('.') {
+                    self.vault_path.join(p).to_string_lossy().to_string()
+                } else {
+                    p.to_string()
+                }
+            }),
+        };
+
+        SearchEngine::with_config(&self.vault_path, &self.db_path, search_config)
             .map_err(|e| McpError::internal_error(format!("Failed to create engine: {}", e), None))
     }
 
@@ -1134,6 +1181,147 @@ impl VaultService {
             serde_json::to_string_pretty(&serde_json::json!({
                 "total": tag_list.len(),
                 "tags": tag_list
+            }))
+            .unwrap(),
+        )]))
+    }
+
+    /// Suggest tags based on similar notes (Advanced Search feature)
+    #[tool(
+        description = "Suggest tags by finding similar notes using Advanced Semantic Search. Requires Advanced Search to be enabled. Aggregates tags from semantically similar notes."
+    )]
+    async fn vault_suggest_tags(
+        &self,
+        params: Parameters<SuggestTagsParams>,
+    ) -> Result<CallToolResult, McpError> {
+        // Check if advanced search is enabled
+        let config = crate::core::config::Config::load(&self.vault_path);
+        if !config.features.is_advanced_search_ready() {
+            return Ok(CallToolResult::success(vec![Content::text(
+                serde_json::json!({
+                    "success": false,
+                    "error": "Advanced Semantic Search is not enabled",
+                    "suggestion": "Enable Advanced Semantic Search in plugin settings and download the model"
+                })
+                .to_string(),
+            )]));
+        }
+
+        // Find the source note
+        let vault_paths = self.get_vault_paths();
+        let notes = collect_all_notes(&vault_paths);
+        let note_name = &params.0.note;
+
+        let source_note = notes.iter().find(|n| {
+            n.name == *note_name
+                || n.path.file_stem().map(|s| s.to_string_lossy().to_string())
+                    == Some(note_name.clone())
+                || n.path.to_string_lossy().contains(note_name)
+        });
+
+        let source_note = match source_note {
+            Some(n) => n,
+            None => {
+                return Ok(CallToolResult::success(vec![Content::text(
+                    serde_json::json!({
+                        "success": false,
+                        "error": format!("Note '{}' not found", note_name)
+                    })
+                    .to_string(),
+                )]));
+            }
+        };
+
+        // Check if note has a gist
+        let gist = match source_note.gist() {
+            Some(g) if !g.is_empty() => g,
+            _ => {
+                return Ok(CallToolResult::success(vec![Content::text(
+                    serde_json::json!({
+                        "success": false,
+                        "error": "Note has no gist for semantic search",
+                        "suggestion": "Add a gist to the note's frontmatter first"
+                    })
+                    .to_string(),
+                )]));
+            }
+        };
+
+        // Get the source note's existing tags to exclude them
+        let source_tags: HashSet<String> = source_note.tags().into_iter().collect();
+
+        // Search for similar notes
+        let mut engine = self.get_engine()?;
+        let similar_count = params.0.similar_count.max(1).min(50);
+
+        let similar_notes = engine
+            .search(gist, similar_count + 1) // +1 to account for self
+            .map_err(|e| McpError::internal_error(format!("Search failed: {}", e), None))?;
+
+        // Aggregate tags from similar notes
+        let mut tag_counts: std::collections::HashMap<String, (usize, f32)> =
+            std::collections::HashMap::new();
+
+        for result in similar_notes.iter() {
+            // Skip the source note itself
+            if result.title == source_note.name {
+                continue;
+            }
+
+            // Find the note to get its tags
+            if let Some(note) = notes.iter().find(|n| n.name == result.title) {
+                for tag in note.tags() {
+                    // Skip tags the source note already has
+                    if source_tags.contains(&tag) {
+                        continue;
+                    }
+
+                    let entry = tag_counts.entry(tag).or_insert((0, 0.0));
+                    entry.0 += 1;
+                    entry.1 = entry.1.max(result.score); // Keep highest score
+                }
+            }
+        }
+
+        // Filter by minimum frequency and sort
+        let min_freq = params.0.min_frequency.max(1);
+        let mut suggestions: Vec<(String, usize, f32)> = tag_counts
+            .into_iter()
+            .filter(|(_, (count, _))| *count >= min_freq)
+            .map(|(tag, (count, score))| (tag, count, score))
+            .collect();
+
+        // Sort by frequency (descending), then by score (descending)
+        suggestions.sort_by(|a, b| {
+            b.1.cmp(&a.1)
+                .then_with(|| b.2.partial_cmp(&a.2).unwrap_or(std::cmp::Ordering::Equal))
+        });
+
+        suggestions.truncate(params.0.limit);
+
+        #[derive(Serialize)]
+        struct TagSuggestion {
+            tag: String,
+            frequency: usize,
+            max_similarity: f32,
+        }
+
+        let results: Vec<TagSuggestion> = suggestions
+            .into_iter()
+            .map(|(tag, freq, score)| TagSuggestion {
+                tag,
+                frequency: freq,
+                max_similarity: score,
+            })
+            .collect();
+
+        Ok(CallToolResult::success(vec![Content::text(
+            serde_json::to_string_pretty(&serde_json::json!({
+                "success": true,
+                "note": source_note.name,
+                "current_tags": source_tags.iter().collect::<Vec<_>>(),
+                "similar_notes_analyzed": similar_notes.len().saturating_sub(1),
+                "suggestions": results
             }))
             .unwrap(),
         )]))

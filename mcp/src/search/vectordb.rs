@@ -7,11 +7,12 @@ use anyhow::{Context, Result};
 use rusqlite::{params, Connection, OptionalExtension};
 use std::path::Path;
 
-use super::embedding::{cosine_similarity, EMBEDDING_DIM};
+use super::embedding::cosine_similarity;
 
 /// Vector database for note embeddings
 pub struct VectorDB {
     conn: Connection,
+    dimension: usize,
 }
 
 /// Note metadata stored alongside embeddings
@@ -29,20 +30,60 @@ pub struct NoteRecord {
 }
 
 impl VectorDB {
-    /// Open or create database at path
-    pub fn open(db_path: &Path) -> Result<Self> {
+    /// Open or create database at path with specified embedding dimension
+    pub fn open(db_path: &Path, dimension: usize) -> Result<Self> {
         let conn = Connection::open(db_path)?;
-        let db = Self { conn };
+        let mut db = Self { conn, dimension };
         db.init_schema()?;
+        db.check_dimension_change(dimension)?;
         Ok(db)
     }
 
     /// Open in-memory database (for testing)
     pub fn open_in_memory() -> Result<Self> {
+        Self::open_in_memory_with_dim(384)
+    }
+
+    /// Open in-memory database with specified dimension
+    pub fn open_in_memory_with_dim(dimension: usize) -> Result<Self> {
         let conn = Connection::open_in_memory()?;
-        let db = Self { conn };
+        let mut db = Self { conn, dimension };
         db.init_schema()?;
+        db.check_dimension_change(dimension)?;
         Ok(db)
+    }
+
+    /// Check if dimension changed and clear data if so
+    fn check_dimension_change(&mut self, new_dim: usize) -> Result<()> {
+        let current_dim = self.get_meta("dimension")?;
+
+        if let Some(dim_str) = current_dim {
+            let stored_dim: usize = dim_str.parse().unwrap_or(0);
+            if stored_dim != new_dim && stored_dim > 0 {
+                // Dimension changed, need to clear all data
+                eprintln!(
+                    "[VectorDB] Dimension changed from {} to {}, clearing index...",
+                    stored_dim, new_dim
+                );
+                self.clear_all()?;
+            }
+        }
+
+        // Store current dimension
+        self.set_meta("dimension", &new_dim.to_string())?;
+        Ok(())
+    }
+
+    /// Clear all notes and embeddings
+    pub fn clear_all(&self) -> Result<()> {
+        self.conn.execute("DELETE FROM embeddings", [])?;
+        self.conn.execute("DELETE FROM notes", [])?;
+        Ok(())
+    }
+
+    /// Get current embedding dimension
+    pub fn dimension(&self) -> usize {
+        self.dimension
     }
 
     /// Initialize database schema
@@ -329,7 +370,7 @@ mod tests {
             mtime: 1704067200,
         };
 
-        let embedding = vec![0.1; EMBEDDING_DIM];
+        let embedding = vec![0.1; db.dimension()];
         db.upsert_note(&note, &embedding)?;
 
         let retrieved = db.get_note("test-note")?;

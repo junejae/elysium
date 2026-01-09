@@ -7,6 +7,7 @@ import { VaultWatcher } from './indexer/VaultWatcher';
 import { RelatedNotesView, RELATED_NOTES_VIEW_TYPE } from './ui/RelatedNotesView';
 import { ElysiumConfig } from './config/ElysiumConfig';
 import { SetupWizard } from './ui/SetupWizard';
+import { ModelDownloader } from './config/ModelDownloader';
 
 interface ElysiumSettings {
   autoIndex: boolean;
@@ -116,7 +117,7 @@ export default class ElysiumPlugin extends Plugin {
     
     if (!exists) {
       this.app.workspace.onLayoutReady(() => {
-        new SetupWizard(this.app, this.elysiumConfig, () => {
+        new SetupWizard(this.app, this.elysiumConfig, this.manifest, () => {
           new Notice('Elysium configured! Run "Reindex Vault" to start.');
         }).open();
       });
@@ -908,6 +909,95 @@ class ElysiumSettingTab extends PluginSettingTab {
             await config.save();
           }));
 
+      containerEl.createEl('h3', { text: 'Advanced Semantic Search' });
+
+      const advancedDesc = containerEl.createEl('p', { cls: 'setting-item-description' });
+      advancedDesc.setText('Enable Model2Vec for improved semantic search accuracy and tag recommendations. This uses a ~8MB neural network model.');
+
+      const advancedConfig = config.getAdvancedSemanticSearchConfig();
+      const modelDownloader = new ModelDownloader(this.app, this.plugin.manifest);
+
+      new Setting(containerEl)
+        .setName('Enable Advanced Search')
+        .setDesc('Use Model2Vec (256d) instead of HTP (384d) for better accuracy')
+        .addToggle(toggle => toggle
+          .setValue(advancedConfig.enabled)
+          .onChange(async (value) => {
+            if (value && !advancedConfig.modelDownloaded) {
+              new Notice('Please download the model first');
+              toggle.setValue(false);
+              return;
+            }
+            config.updateAdvancedSemanticSearchConfig({ enabled: value });
+            await config.save();
+            if (value) {
+              new Notice('Advanced Search enabled. Please reindex your vault.');
+            }
+          }));
+
+      const modelStatus = advancedConfig.modelDownloaded
+        ? `Model downloaded at: ${advancedConfig.modelPath}`
+        : 'Model not downloaded';
+
+      new Setting(containerEl)
+        .setName('Model Status')
+        .setDesc(modelStatus)
+        .addButton(button => {
+          if (advancedConfig.modelDownloaded) {
+            button
+              .setButtonText('Delete Model')
+              .setWarning()
+              .onClick(async () => {
+                button.setButtonText('Deleting...');
+                button.setDisabled(true);
+                try {
+                  await modelDownloader.deleteModel();
+                  config.updateAdvancedSemanticSearchConfig({
+                    enabled: false,
+                    modelDownloaded: false,
+                    modelPath: null,
+                  });
+                  await config.save();
+                  new Notice('Model deleted');
+                  this.display();
+                } catch (e) {
+                  new Notice('Failed to delete model');
+                  button.setButtonText('Delete Model');
+                  button.setDisabled(false);
+                }
+              });
+          } else {
+            button
+              .setButtonText('Download Model (~8MB)')
+              .setCta()
+              .onClick(async () => {
+                button.setButtonText('Downloading...');
+                button.setDisabled(true);
+                try {
+                  const modelPath = await modelDownloader.downloadModel((progress) => {
+                    button.setButtonText(`Downloading... ${progress.currentFile}/${progress.totalFiles}`);
+                  });
+                  config.updateAdvancedSemanticSearchConfig({
+                    modelDownloaded: true,
+                    modelPath: modelPath,
+                  });
+                  await config.save();
+                  new Notice('Model downloaded successfully!');
+                  this.display();
+                } catch (e) {
+                  new Notice(`Download failed: ${e instanceof Error ? e.message : 'Unknown error'}`);
+                  button.setButtonText('Download Model (~8MB)');
+                  button.setDisabled(false);
+                }
+              });
+          }
+        });
+
+      if (advancedConfig.enabled) {
+        const reindexNote = containerEl.createEl('p', { cls: 'setting-item-description' });
+        reindexNote.setText('Note: Changing the search model requires reindexing your vault.');
+      }
+
       containerEl.createEl('h3', { text: 'Gist' });
       
       const gistDesc = containerEl.createEl('p', { cls: 'setting-item-description' });
@@ -1015,7 +1105,7 @@ class ElysiumSettingTab extends PluginSettingTab {
         .addButton(button => button
           .setButtonText('Open Wizard')
           .onClick(() => {
-            new SetupWizard(this.app, config, () => {
+            new SetupWizard(this.app, config, this.plugin.manifest, () => {
               this.display();
             }).open();
           }));

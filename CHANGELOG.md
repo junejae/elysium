@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.4.0] - 2026-01-09
+
+### Added
+- **Model2Vec Integration**: Optional neural embedding model for improved semantic search
+  - `embedder.rs`: Embedder trait abstraction over HTP and Model2Vec
+  - `ModelDownloader`: Download Model2Vec (potion-base-8M, ~8MB) from HuggingFace
+  - SetupWizard: "Advanced Semantic Search" step for optional model download
+  - `AdvancedSemanticSearchConfig`: Configuration for neural embeddings
+
+### Changed
+- Search engine now supports swappable embedding backends (HTP default, Model2Vec optional)
+- VectorDB updated to handle variable embedding dimensions
+
 ## [1.3.0] - 2026-01-09
 
 ### Added

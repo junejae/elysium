@@ -1,9 +1,10 @@
-import { App, Modal, Setting, Notice } from 'obsidian';
+import { App, Modal, Setting, Notice, PluginManifest } from 'obsidian';
 import { VaultScanner, VaultAnalysis, SchemaRecommendation } from '../config/VaultScanner';
 import { MigrationEngine, MigrationPlan, MigrationProgress } from '../migration/MigrationEngine';
-import { ElysiumConfig, GistConfig, FIELD_NAMES } from '../config/ElysiumConfig';
+import { ElysiumConfig, GistConfig, FIELD_NAMES, AdvancedSemanticSearchConfig } from '../config/ElysiumConfig';
+import { ModelDownloader, DownloadProgress } from '../config/ModelDownloader';
 
-type WizardStep = 'welcome' | 'analyzing' | 'review' | 'mapping' | 'preview' | 'migrating' | 'inbox' | 'complete';
+type WizardStep = 'welcome' | 'analyzing' | 'review' | 'mapping' | 'preview' | 'migrating' | 'advanced' | 'inbox' | 'complete';
 
 const GIST_DESCRIPTION = 'Gist is a short summary (2-3 sentences) stored in frontmatter. It powers semantic search—finding notes by meaning, not just keywords. Without gist, Elysium falls back to filename-based search.';
 
@@ -18,14 +19,20 @@ export class SetupWizard extends Modal {
   private skipMigration: boolean = false;
   private gistSettings: GistConfig;
   private inboxPath: string;
+  private manifest: PluginManifest;
+  private modelDownloader: ModelDownloader;
+  private advancedSearchSettings: AdvancedSemanticSearchConfig;
 
-  constructor(app: App, config: ElysiumConfig, onComplete: () => void) {
+  constructor(app: App, config: ElysiumConfig, manifest: PluginManifest, onComplete: () => void) {
     super(app);
     this.config = config;
+    this.manifest = manifest;
     this.scanner = new VaultScanner(app);
     this.onComplete = onComplete;
     this.gistSettings = { ...config.getGistConfig() };
     this.inboxPath = config.getInboxPath();
+    this.modelDownloader = new ModelDownloader(app, manifest);
+    this.advancedSearchSettings = { ...config.getAdvancedSemanticSearchConfig() };
   }
 
   onOpen() {
@@ -59,6 +66,9 @@ export class SetupWizard extends Modal {
         break;
       case 'migrating':
         this.renderMigrating();
+        break;
+      case 'advanced':
+        this.renderAdvanced();
         break;
       case 'inbox':
         this.renderInbox();
@@ -606,6 +616,148 @@ export class SetupWizard extends Modal {
     }
 
     this.config.updateGistConfig(this.gistSettings);
+
+    try {
+      await this.config.save();
+    } catch (e) {
+      console.error('Failed to save config:', e);
+    }
+
+    this.currentStep = 'advanced';
+    this.renderStep();
+  }
+
+  private advancedProgressEl: HTMLElement | null = null;
+  private advancedToggle: any = null;
+
+  private renderAdvanced() {
+    const { contentEl } = this;
+
+    contentEl.createEl('h2', { text: 'Advanced Semantic Search' });
+
+    const intro = contentEl.createDiv({ cls: 'elysium-wizard-intro' });
+    intro.createEl('p', {
+      text: 'Enable Model2Vec for improved semantic search accuracy and tag recommendations. This requires downloading a ~8MB model file.'
+    });
+
+    // Feature comparison table
+    const comparisonEl = contentEl.createDiv({ cls: 'elysium-wizard-comparison' });
+    comparisonEl.createEl('h4', { text: 'Feature Comparison' });
+
+    const table = comparisonEl.createEl('table');
+    const thead = table.createEl('thead');
+    const headerRow = thead.createEl('tr');
+    headerRow.createEl('th', { text: '' });
+    headerRow.createEl('th', { text: 'Basic (HTP)' });
+    headerRow.createEl('th', { text: 'Advanced (Model2Vec)' });
+
+    const tbody = table.createEl('tbody');
+    const features = [
+      ['Model Size', '0 MB (built-in)', '~8 MB download'],
+      ['Embedding Quality', 'Good', 'Better (neural network)'],
+      ['Speed', 'Fast (~1.5ms)', 'Very Fast (~0.04ms)'],
+      ['Tag Recommendations', 'No', 'Yes'],
+      ['Multilingual', 'Limited', '101 languages'],
+    ];
+
+    for (const [feature, basic, advanced] of features) {
+      const row = tbody.createEl('tr');
+      row.createEl('td', { text: feature });
+      row.createEl('td', { text: basic });
+      row.createEl('td', { text: advanced });
+    }
+
+    // Toggle setting
+    const toggleSetting = new Setting(contentEl)
+      .setName('Enable Advanced Semantic Search')
+      .setDesc('Uses Model2Vec (potion-base-8M) for better semantic understanding');
+
+    toggleSetting.addToggle(toggle => {
+      this.advancedToggle = toggle;
+      toggle.setValue(this.advancedSearchSettings.enabled);
+      toggle.onChange(async (value) => {
+        this.advancedSearchSettings.enabled = value;
+        if (value && !this.advancedSearchSettings.modelDownloaded) {
+          await this.downloadAdvancedModel();
+        }
+      });
+    });
+
+    // Progress container
+    this.advancedProgressEl = contentEl.createDiv({ cls: 'elysium-wizard-download-progress' });
+    this.advancedProgressEl.style.display = 'none';
+
+    // Model status
+    const statusEl = contentEl.createDiv({ cls: 'elysium-wizard-model-status' });
+    if (this.advancedSearchSettings.modelDownloaded) {
+      statusEl.createEl('p', {
+        text: '✓ Model already downloaded',
+        cls: 'elysium-wizard-success'
+      });
+    }
+
+    // Note about reindexing
+    const noteEl = contentEl.createDiv({ cls: 'elysium-wizard-note' });
+    noteEl.createEl('p', {
+      text: 'Note: Enabling or disabling this feature will require reindexing your vault.',
+      cls: 'elysium-wizard-info'
+    });
+
+    const buttonContainer = contentEl.createDiv({ cls: 'elysium-wizard-buttons' });
+
+    const continueBtn = buttonContainer.createEl('button', {
+      text: 'Continue',
+      cls: 'mod-cta'
+    });
+    continueBtn.addEventListener('click', () => this.saveAdvancedAndContinue());
+
+    const skipBtn = buttonContainer.createEl('button', { text: 'Skip (Use Basic)' });
+    skipBtn.addEventListener('click', () => {
+      this.advancedSearchSettings.enabled = false;
+      this.saveAdvancedAndContinue();
+    });
+  }
+
+  private async downloadAdvancedModel(): Promise<void> {
+    if (!this.advancedProgressEl) return;
+
+    this.advancedProgressEl.style.display = 'block';
+    this.advancedProgressEl.empty();
+
+    const progressBar = this.advancedProgressEl.createDiv({ cls: 'elysium-wizard-progress-bar' });
+    const fill = progressBar.createDiv({ cls: 'fill' });
+    const statusText = this.advancedProgressEl.createEl('p', { text: 'Downloading model...' });
+
+    try {
+      const modelPath = await this.modelDownloader.downloadModel((progress: DownloadProgress) => {
+        const overallPercent = ((progress.currentFile - 1) / progress.totalFiles * 100) +
+          (progress.percent / progress.totalFiles);
+        fill.style.width = `${overallPercent}%`;
+        statusText.setText(`Downloading ${progress.file}... (${progress.currentFile}/${progress.totalFiles})`);
+      });
+
+      this.advancedSearchSettings.modelDownloaded = true;
+      this.advancedSearchSettings.modelPath = modelPath;
+
+      fill.style.width = '100%';
+      statusText.setText('✓ Model downloaded successfully!');
+      statusText.addClass('elysium-wizard-success');
+    } catch (e) {
+      console.error('Failed to download model:', e);
+      statusText.setText(`Download failed: ${e instanceof Error ? e.message : 'Unknown error'}`);
+      statusText.addClass('elysium-wizard-error');
+
+      this.advancedSearchSettings.enabled = false;
+      if (this.advancedToggle) {
+        this.advancedToggle.setValue(false);
+      }
+
+      new Notice('Failed to download model. You can try again later in Settings.');
+    }
+  }
+
+  private async saveAdvancedAndContinue(): Promise<void> {
+    this.config.updateAdvancedSemanticSearchConfig(this.advancedSearchSettings);
 
     try {
       await this.config.save();

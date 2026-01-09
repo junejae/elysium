@@ -45,14 +45,22 @@ echo ""
 sync_versions() {
     echo "=== Syncing versions to $VERSION ==="
 
-    local CHANGES_MADE=false
+    # In dry-run mode, only show what would be synced
+    if [[ "$DRY_RUN" == true ]]; then
+        echo -e "${YELLOW}DRY RUN: Would sync the following files:${NC}"
+        [[ -f mcp/Cargo.toml ]] && echo "  - mcp/Cargo.toml"
+        [[ -f npm/package.json ]] && echo "  - npm/package.json"
+        [[ -f plugin/manifest.json ]] && echo "  - plugin/manifest.json"
+        [[ -f plugin/package.json ]] && echo "  - plugin/package.json"
+        echo ""
+        return
+    fi
 
     # 1. Sync mcp/Cargo.toml
     if [[ -f mcp/Cargo.toml ]]; then
         sed -i.bak "s/^version = \".*\"/version = \"$VERSION\"/" mcp/Cargo.toml
         rm -f mcp/Cargo.toml.bak
         echo "  - mcp/Cargo.toml: synced"
-        CHANGES_MADE=true
     fi
 
     # 2. Sync npm/package.json
@@ -64,7 +72,6 @@ sync_versions() {
             fs.writeFileSync('npm/package.json', JSON.stringify(pkg, null, 2) + '\n');
         "
         echo "  - npm/package.json: synced"
-        CHANGES_MADE=true
     fi
 
     # 3. Sync plugin/manifest.json
@@ -76,7 +83,6 @@ sync_versions() {
             fs.writeFileSync('plugin/manifest.json', JSON.stringify(m, null, 2) + '\n');
         "
         echo "  - plugin/manifest.json: synced"
-        CHANGES_MADE=true
     fi
 
     # 4. Sync plugin/package.json
@@ -88,7 +94,6 @@ sync_versions() {
             fs.writeFileSync('plugin/package.json', JSON.stringify(pkg, null, 2) + '\n');
         "
         echo "  - plugin/package.json: synced"
-        CHANGES_MADE=true
     fi
 
     # Check if any files were actually changed

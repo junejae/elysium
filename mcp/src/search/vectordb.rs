@@ -32,6 +32,12 @@ pub struct NoteRecord {
 impl VectorDB {
     /// Open or create database at path with specified embedding dimension
     pub fn open(db_path: &Path, dimension: usize) -> Result<Self> {
+        // Ensure parent directory exists (cross-platform: works on both Mac and Windows)
+        if let Some(parent) = db_path.parent() {
+            std::fs::create_dir_all(parent)
+                .with_context(|| format!("Failed to create directory: {}", parent.display()))?;
+        }
+
         let conn = Connection::open(db_path)?;
         let mut db = Self { conn, dimension };
         db.init_schema()?;

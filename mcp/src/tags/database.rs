@@ -27,6 +27,12 @@ pub struct TagDatabase {
 impl TagDatabase {
     /// Open or create tag database
     pub fn open(path: &Path) -> Result<Self> {
+        // Ensure parent directory exists (cross-platform: works on both Mac and Windows)
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent)
+                .with_context(|| format!("Failed to create directory: {}", parent.display()))?;
+        }
+
         let conn = Connection::open(path)
             .with_context(|| format!("Failed to open tag database: {}", path.display()))?;
 

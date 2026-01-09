@@ -78,8 +78,8 @@ echo ""
 
 # Show what will be released
 echo "=== Release Notes (from CHANGELOG.md) ==="
-# Extract the section for this version
-sed -n "/## \[$VERSION\]/,/## \[/p" CHANGELOG.md | head -n -1
+# Extract the section for this version (macOS compatible)
+awk "/## \[$VERSION\]/{found=1} found{print} /## \[/ && !/## \[$VERSION\]/ && found{exit}" CHANGELOG.md | head -20
 echo ""
 
 if [[ "$DRY_RUN" == true ]]; then

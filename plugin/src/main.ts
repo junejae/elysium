@@ -1021,6 +1021,41 @@ class ElysiumSettingTab extends PluginSettingTab {
             }));
       }
 
+      containerEl.createEl('h3', { text: 'Folders' });
+      
+      const foldersDesc = containerEl.createEl('p', { cls: 'setting-item-description' });
+      foldersDesc.setText('Folder paths for note organization. MCP uses these settings when creating notes.');
+
+      new Setting(containerEl)
+        .setName('Notes folder')
+        .setDesc('Folder for note, term, and log types')
+        .addText(text => text
+          .setValue(config.getNotesFolder())
+          .onChange(async (value) => {
+            config.updateFoldersConfig({ notes: value });
+            await config.save();
+          }));
+
+      new Setting(containerEl)
+        .setName('Projects folder')
+        .setDesc('Folder for active projects')
+        .addText(text => text
+          .setValue(config.getProjectsFolder())
+          .onChange(async (value) => {
+            config.updateFoldersConfig({ projects: value });
+            await config.save();
+          }));
+
+      new Setting(containerEl)
+        .setName('Archive folder')
+        .setDesc('Folder for completed/archived projects')
+        .addText(text => text
+          .setValue(config.getArchiveFolder())
+          .onChange(async (value) => {
+            config.updateFoldersConfig({ archive: value });
+            await config.save();
+          }));
+
       containerEl.createEl('h3', { text: 'Setup' });
 
       new Setting(containerEl)

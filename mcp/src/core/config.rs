@@ -1,6 +1,11 @@
 //! Elysium configuration module
 //!
-//! Loads configuration from .elysium.json in vault root with sensible defaults.
+//! Config loading priority:
+//! 1. Plugin config: .obsidian/plugins/elysium/config.json (SSOT)
+//! 2. Legacy fallback: .elysium.json (for backward compatibility)
+//!
+//! Philosophy: MCP is a helper tool for the Obsidian plugin.
+//! The plugin owns the configuration, MCP follows it.
 
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
@@ -8,7 +13,10 @@ use std::collections::HashSet;
 use std::fs;
 use std::path::{Path, PathBuf};
 
-pub const CONFIG_FILE_NAME: &str = ".elysium.json";
+/// Plugin config path (Single Source of Truth)
+pub const PLUGIN_CONFIG_PATH: &str = ".obsidian/plugins/elysium/config.json";
+/// Legacy config path (backward compatibility)
+pub const LEGACY_CONFIG_FILE: &str = ".elysium.json";
 pub const CONFIG_VERSION: u32 = 1;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -200,16 +208,16 @@ impl Default for Config {
 }
 
 impl Config {
-    /// Load configuration from vault root, or return defaults if not found
     pub fn load(vault_root: &Path) -> Self {
-        let config_path = vault_root.join(CONFIG_FILE_NAME);
+        let plugin_config_path = vault_root.join(PLUGIN_CONFIG_PATH);
+        let legacy_config_path = vault_root.join(LEGACY_CONFIG_FILE);
 
-        if config_path.exists() {
-            match Self::load_from_file(&config_path) {
+        if plugin_config_path.exists() {
+            match Self::load_from_file(&plugin_config_path) {
                 Ok(config) => {
                     if config.version > CONFIG_VERSION {
                         eprintln!(
-                            "Warning: Config version {} is newer than supported version {}. Some features may not work.",
+                            "Warning: Config version {} is newer than supported version {}.",
                             config.version, CONFIG_VERSION
                         );
                     }
@@ -217,8 +225,26 @@ impl Config {
                 }
                 Err(e) => {
                     eprintln!(
+                        "Warning: Failed to load plugin config: {}. Trying legacy path.",
+                        e
+                    );
+                }
+            }
+        }
+
+        if legacy_config_path.exists() {
+            match Self::load_from_file(&legacy_config_path) {
+                Ok(config) => {
+                    eprintln!(
+                        "Note: Using legacy config {}. Consider migrating to plugin config.",
+                        LEGACY_CONFIG_FILE
+                    );
+                    return config;
+                }
+                Err(e) => {
+                    eprintln!(
                         "Warning: Failed to load {}: {}. Using defaults.",
-                        CONFIG_FILE_NAME, e
+                        LEGACY_CONFIG_FILE, e
                     );
                 }
             }
@@ -233,9 +259,11 @@ impl Config {
         Ok(config)
     }
 
-    /// Save configuration to file
     pub fn save(&self, vault_root: &Path) -> Result<()> {
-        let config_path = vault_root.join(CONFIG_FILE_NAME);
+        let config_path = vault_root.join(PLUGIN_CONFIG_PATH);
+        if let Some(parent) = config_path.parent() {
+            fs::create_dir_all(parent)?;
+        }
         let content = serde_json::to_string_pretty(self)?;
         fs::write(config_path, content)?;
         Ok(())

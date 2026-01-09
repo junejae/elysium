@@ -4,7 +4,7 @@ use anyhow::Result;
 use colored::*;
 use std::fs;
 
-use crate::core::config::{Config, CONFIG_FILE_NAME};
+use crate::core::config::{Config, PLUGIN_CONFIG_PATH};
 use crate::core::paths::get_vault_root;
 
 pub fn run(config: bool, inbox: Option<String>) -> Result<()> {
@@ -36,26 +36,22 @@ pub fn run(config: bool, inbox: Option<String>) -> Result<()> {
 
 fn run_config_init(inbox: Option<String>) -> Result<()> {
     let vault_root = get_vault_root();
-    let config_path = vault_root.join(CONFIG_FILE_NAME);
+    let config_path = vault_root.join(PLUGIN_CONFIG_PATH);
 
     println!("{}", "Elysium Configuration Generator".bold());
     println!("{}", "=".repeat(50));
     println!();
 
-    let mut config = if config_path.exists() {
-        println!("{} Loading existing config...", "→".blue());
-        Config::load(&vault_root)
-    } else {
-        Config::default()
-    };
+    let mut config = Config::load(&vault_root);
 
     if let Some(inbox_path) = &inbox {
         config.features.inbox = inbox_path.clone();
     }
 
+    let existed = config_path.exists();
     config.save(&vault_root)?;
 
-    if config_path.exists() {
+    if existed {
         println!("{} Updated {}", "✓".green(), config_path.display());
     } else {
         println!("{} Created {}", "✓".green(), config_path.display());
@@ -101,7 +97,7 @@ fn run_config_init(inbox: Option<String>) -> Result<()> {
     println!();
     println!(
         "{}",
-        "Edit .elysium.json to customize schema, folders, and features.".dimmed()
+        "Config saved to plugin path. Edit via Obsidian settings or config.json directly.".dimmed()
     );
     println!();
 

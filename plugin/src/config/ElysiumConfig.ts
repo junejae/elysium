@@ -23,9 +23,16 @@ export interface SchemaConfig {
   tags: { name: string; maxCount: number; lowercase: boolean };
 }
 
+export interface FoldersConfig {
+  notes: string;
+  projects: string;
+  archive: string;
+}
+
 export interface ElysiumConfigData {
   version: number;
   schema: SchemaConfig;
+  folders: FoldersConfig;
   inbox: {
     enabled: boolean;
     path: string;
@@ -53,6 +60,11 @@ const DEFAULT_CONFIG: ElysiumConfigData = {
       dateFieldName: 'gist_date',
     },
     tags: { name: 'tags', maxCount: 5, lowercase: true },
+  },
+  folders: {
+    notes: 'Notes',
+    projects: 'Projects',
+    archive: 'Archive',
   },
   inbox: {
     enabled: true,
@@ -181,6 +193,11 @@ export class ElysiumConfig {
           lowercase: parsedTags?.lowercase ?? oldValidation?.lowercaseTags ?? DEFAULT_CONFIG.schema.tags.lowercase,
         },
       },
+      folders: {
+        notes: parsed.folders?.notes ?? DEFAULT_CONFIG.folders.notes,
+        projects: parsed.folders?.projects ?? DEFAULT_CONFIG.folders.projects,
+        archive: parsed.folders?.archive ?? DEFAULT_CONFIG.folders.archive,
+      },
       inbox: {
         enabled: parsed.inbox?.enabled ?? DEFAULT_CONFIG.inbox.enabled,
         path: parsed.inbox?.path ?? DEFAULT_CONFIG.inbox.path,
@@ -293,6 +310,26 @@ export class ElysiumConfig {
 
   updateInboxConfig(inbox: Partial<{ enabled: boolean; path: string }>): void {
     this.config.inbox = { ...this.config.inbox, ...inbox };
+  }
+
+  getFoldersConfig(): FoldersConfig {
+    return this.config.folders;
+  }
+
+  getNotesFolder(): string {
+    return this.config.folders.notes;
+  }
+
+  getProjectsFolder(): string {
+    return this.config.folders.projects;
+  }
+
+  getArchiveFolder(): string {
+    return this.config.folders.archive;
+  }
+
+  updateFoldersConfig(folders: Partial<FoldersConfig>): void {
+    this.config.folders = { ...this.config.folders, ...folders };
   }
 
   static getDefault(): ElysiumConfigData {

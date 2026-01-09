@@ -7,6 +7,38 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.3.0] - 2026-01-09
+
+### Added
+- **Tag Automation**: Semantic tag generation using Model2Vec embeddings
+  - `TagEmbedder`: Model2Vec wrapper (potion-multilingual-128M, 256 dims, 101 languages)
+  - `TagDatabase`: SQLite-based tag storage with embeddings and aliases
+  - `TagMatcher`: Hybrid matching combining keyword and semantic similarity
+  - `KeywordExtractor`: Extract representative keywords from content using tokenizer
+  - Tag Discovery mode: Find new tags from content, not just pre-indexed database
+
+- **CLI Commands**:
+  - `elysium tags init`: Initialize tag database with 31 seed tags
+  - `elysium tags suggest`: Suggest tags for text (`--discover` for new tag discovery)
+  - `elysium tags sync`: Sync all notes with auto-generated tags (`--discover --execute`)
+  - `elysium tags extract`: Build tag DB from existing vault notes
+  - `elysium tags keywords`: Extract keywords from text using Model2Vec tokenizer
+
+- **MCP Integration**:
+  - `vault_save`: Added `auto_tag`, `tag_limit`, `discover` parameters
+  - Auto-tagging on note creation with discovery mode support
+
+- **Stopword Filtering**:
+  - 160+ English stopwords (articles, pronouns, prepositions, conjunctions)
+  - 100+ Korean stopwords (조사, 대명사, 접속사, 부사)
+  - Korean verb suffix patterns (~입니다, ~습니다, ~하는)
+  - Korean particle patterns (~가, ~는, ~를)
+
+### Dependencies
+- Added `model2vec = "0.2"` for semantic embeddings
+- Added `safetensors = "0.4"` for direct model access
+- Added `tokenizers = "0.20"` for keyword extraction
+
 ## [1.2.0] - 2026-01-09
 
 ### Added

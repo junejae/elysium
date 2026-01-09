@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.9.0] - 2026-01-09
+
+### Added
+- **Plugin**: Folders configuration in Obsidian settings (notes, projects, archive)
+
+### Changed
+- **Architecture**: Plugin config is now Single Source of Truth (SSOT)
+  - MCP reads from `.obsidian/plugins/elysium/config.json` first
+  - Falls back to `.elysium.json` for backward compatibility
+- **Philosophy**: MCP is a helper tool for the plugin, not standalone
+  - Documented in CONTRIBUTING.md
+
 ## [0.8.0] - 2026-01-09
 
 ### Added

@@ -10,6 +10,7 @@ struct AuditResult {
     timestamp: String,
     total_checks: usize,
     passed: usize,
+    warned: usize,
     failed: usize,
     checks: Vec<CheckResult>,
 }
@@ -21,6 +22,8 @@ struct CheckResult {
     status: String,
     errors: usize,
     details: Option<String>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    files: Vec<String>,
 }
 
 pub fn run(quick: bool, json: bool, strict: bool) -> Result<()> {
@@ -48,12 +51,14 @@ pub fn run(quick: bool, json: bool, strict: bool) -> Result<()> {
     }
 
     let passed = checks.iter().filter(|c| c.status == "pass").count();
+    let warned = checks.iter().filter(|c| c.status == "warn").count();
     let failed = checks.iter().filter(|c| c.status == "fail").count();
 
     let result = AuditResult {
         timestamp: chrono::Local::now().to_rfc3339(),
         total_checks: checks.len(),
         passed,
+        warned,
         failed,
         checks,
     };
@@ -83,6 +88,7 @@ fn check_schema(notes: &[crate::core::note::Note]) -> CheckResult {
         status: if errors == 0 { "pass" } else { "fail" }.to_string(),
         errors,
         details: None,
+        files: Vec::new(),
     }
 }
 
@@ -105,18 +111,31 @@ fn check_wikilinks(
         status: if errors == 0 { "pass" } else { "fail" }.to_string(),
         errors,
         details: None,
+        files: Vec::new(),
     }
 }
 
 fn check_gist(notes: &[crate::core::note::Note]) -> CheckResult {
-    let missing = notes.iter().filter(|n| n.gist().is_none()).count();
+    let missing_notes: Vec<String> = notes
+        .iter()
+        .filter(|n| match n.gist() {
+            None => true,
+            Some(g) => g.trim().is_empty(),
+        })
+        .map(|n| n.name.clone())
+        .collect();
 
+    let missing = missing_notes.len();
+
+    // Use "warn" status instead of "fail" - empty gist is not critical
+    // AI or human can fill these later
     CheckResult {
         id: "gist".to_string(),
         name: "Gist Quality".to_string(),
-        status: if missing == 0 { "pass" } else { "fail" }.to_string(),
+        status: if missing == 0 { "pass" } else { "warn" }.to_string(),
         errors: missing,
         details: Some(format!("{} notes missing gist", missing)),
+        files: missing_notes,
     }
 }
 
@@ -130,6 +149,7 @@ fn check_tags(notes: &[crate::core::note::Note]) -> CheckResult {
         status: if ratio < 0.3 { "pass" } else { "fail" }.to_string(),
         errors: without_tags,
         details: Some(format!("{:.0}% notes without tags", ratio * 100.0)),
+        files: Vec::new(),
     }
 }
 
@@ -157,6 +177,7 @@ fn check_orphans(
         status: if ratio < 0.3 { "pass" } else { "fail" }.to_string(),
         errors: orphans,
         details: Some(format!("{} orphan notes ({:.0}%)", orphans, ratio * 100.0)),
+        files: Vec::new(),
     }
 }
 
@@ -166,9 +187,14 @@ fn print_report(result: &AuditResult) {
     println!();
     println!("Timestamp: {}", result.timestamp);
     println!(
-        "Checks: {} | Pass: {} | Fail: {}",
+        "Checks: {} | Pass: {} | Warn: {} | Fail: {}",
         result.total_checks,
         result.passed.to_string().green(),
+        if result.warned > 0 {
+            result.warned.to_string().yellow()
+        } else {
+            result.warned.to_string().green()
+        },
         if result.failed > 0 {
             result.failed.to_string().red()
         } else {
@@ -181,6 +207,7 @@ fn print_report(result: &AuditResult) {
     for check in &result.checks {
         let icon = match check.status.as_str() {
             "pass" => "✅",
+            "warn" => "⚠️",
             "fail" => "❌",
             _ => "?",
         };
@@ -191,19 +218,36 @@ fn print_report(result: &AuditResult) {
             check.status.to_uppercase()
         );
 
-        if check.status == "fail" {
-            println!("   Errors: {}", check.errors);
+        if check.status == "fail" || check.status == "warn" {
+            println!("   Count: {}", check.errors);
         }
         if let Some(details) = &check.details {
             println!("   {}", details);
+        }
+        // Show files list for warn status (empty gist notes)
+        if check.status == "warn" && !check.files.is_empty() {
+            let display_files: Vec<&str> = check.files.iter().take(5).map(|s| s.as_str()).collect();
+            println!("   Files: {}", display_files.join(", "));
+            if check.files.len() > 5 {
+                println!("   ... and {} more", check.files.len() - 5);
+            }
         }
     }
 
     println!("{}", "-".repeat(60));
     println!();
 
-    if result.failed == 0 {
+    if result.failed == 0 && result.warned == 0 {
         println!("{}", "✅ All checks passed!".green());
+    } else if result.failed == 0 {
+        println!(
+            "{}",
+            format!(
+                "⚠️  {} warning(s) - not critical, can be fixed later",
+                result.warned
+            )
+            .yellow()
+        );
     } else {
         println!(
             "{}",

@@ -178,36 +178,37 @@ export class SetupWizard extends Modal {
 
     const migrationSummary = contentEl.createDiv({ cls: 'elysium-wizard-migration-summary' });
     migrationSummary.createEl('h4', { text: 'Migration Summary' });
-    
+
     const { migrationStats } = this.recommendation;
-    const gistChanges = this.gistSettings.enabled ? migrationStats.notesNeedingGistGeneration : 0;
-    const totalChanges = migrationStats.notesNeedingTypeUpdate + 
-                        migrationStats.notesNeedingAreaUpdate + 
-                        gistChanges +
+    const totalChanges = migrationStats.notesNeedingTypeUpdate +
+                        migrationStats.notesNeedingAreaUpdate +
                         migrationStats.notesNeedingNewFrontmatter;
 
     if (totalChanges === 0) {
-      migrationSummary.createEl('p', { 
+      migrationSummary.createEl('p', {
         text: '✓ Your vault is already well-structured! No migration needed.',
         cls: 'elysium-wizard-success'
       });
     } else {
       const changesList = migrationSummary.createEl('ul');
       if (migrationStats.notesNeedingNewFrontmatter > 0) {
-        changesList.createEl('li', { 
+        changesList.createEl('li', {
           text: `${migrationStats.notesNeedingNewFrontmatter} notes need frontmatter added`
         });
       }
       if (migrationStats.notesNeedingTypeUpdate > 0) {
-        changesList.createEl('li', { 
+        changesList.createEl('li', {
           text: `${migrationStats.notesNeedingTypeUpdate} notes need type field update`
         });
       }
-      if (this.gistSettings.enabled && migrationStats.notesNeedingGistGeneration > 0) {
-        changesList.createEl('li', { 
-          text: `${migrationStats.notesNeedingGistGeneration} notes need gist generation`
-        });
-      }
+    }
+
+    // Show empty gist info separately
+    if (this.gistSettings.enabled && migrationStats.notesNeedingGistGeneration > 0) {
+      migrationSummary.createEl('p', {
+        text: `ℹ️ ${migrationStats.notesNeedingGistGeneration} notes have empty gist (can be filled by AI or human later)`,
+        cls: 'elysium-wizard-info'
+      });
     }
 
     const buttonContainer = contentEl.createDiv({ cls: 'elysium-wizard-buttons' });
@@ -314,9 +315,9 @@ export class SetupWizard extends Modal {
 
   private renderGistOptions(container: HTMLElement, rec: SchemaRecommendation['gistField']) {
     container.empty();
-    
+
     if (!this.gistSettings.enabled) {
-      container.createEl('p', { 
+      container.createEl('p', {
         text: 'Semantic search will use filenames instead of summaries.',
         cls: 'elysium-wizard-gist-disabled-note'
       });
@@ -326,42 +327,22 @@ export class SetupWizard extends Modal {
     if (rec.existingField) {
       container.createEl('p', { text: `Found existing field: "${rec.existingField}"` });
       if (rec.existingField !== FIELD_NAMES.GIST) {
-        container.createEl('p', { 
+        container.createEl('p', {
           text: `→ Will migrate to "${FIELD_NAMES.GIST}"`,
           cls: 'recommendation'
         });
       }
       if (rec.notesWithoutGist > 0) {
-        container.createEl('p', { 
-          text: `${rec.notesWithoutGist} notes missing gist`,
+        container.createEl('p', {
+          text: `${rec.notesWithoutGist} notes missing gist (AI or human can fill later)`,
           cls: 'recommendation'
         });
       }
     }
 
     new Setting(container)
-      .setName('Auto-generate gist')
-      .setDesc('Extract summary from first paragraph when gist is missing')
-      .addToggle(toggle => {
-        toggle.setValue(this.gistSettings.autoGenerate);
-        toggle.onChange(value => {
-          this.gistSettings.autoGenerate = value;
-        });
-      });
-
-    new Setting(container)
-      .setName('Track source')
-      .setDesc('Track gist origin (human/auto/ai) and date for freshness checks')
-      .addToggle(toggle => {
-        toggle.setValue(this.gistSettings.trackSource);
-        toggle.onChange(value => {
-          this.gistSettings.trackSource = value;
-        });
-      });
-
-    new Setting(container)
       .setName('Max length')
-      .setDesc('Maximum characters for auto-generated gist')
+      .setDesc('Maximum characters for gist field')
       .addText(text => {
         text.setValue(String(this.gistSettings.maxLength));
         text.onChange(value => {
@@ -371,6 +352,11 @@ export class SetupWizard extends Modal {
           }
         });
       });
+
+    container.createEl('p', {
+      text: 'Gist will be filled by AI (via MCP) or written manually. No auto-generation to avoid YAML issues.',
+      cls: 'elysium-wizard-gist-note'
+    });
   }
 
   private renderMapping() {
@@ -502,9 +488,6 @@ export class SetupWizard extends Modal {
     }
     if (summary.updateType > 0) {
       summaryList.createEl('li', { text: `Update type field in ${summary.updateType} files` });
-    }
-    if (summary.addGist > 0) {
-      summaryList.createEl('li', { text: `Generate gist for ${summary.addGist} files` });
     }
 
     summaryEl.createEl('p', { 

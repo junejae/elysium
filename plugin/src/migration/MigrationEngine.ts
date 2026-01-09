@@ -2,8 +2,6 @@ import { App, TFile, Notice } from 'obsidian';
 import { SchemaRecommendation } from '../config/VaultScanner';
 import { GistConfig, FIELD_NAMES } from '../config/ElysiumConfig';
 
-export type GistSource = 'human' | 'auto' | 'ai';
-
 const isExcludedPath = (path: string): boolean => {
   return path.split('/').some(part => part.startsWith('.'));
 };
@@ -61,9 +59,7 @@ export class MigrationEngine {
     this.recommendation = recommendation;
     this.gistConfig = gistConfig ?? {
       enabled: false,
-      autoGenerate: true,
       maxLength: 200,
-      trackSource: true,
     };
   }
 
@@ -102,17 +98,8 @@ export class MigrationEngine {
 
       const cachedMeta = this.app.metadataCache.getFileCache(file);
       const frontmatter = cachedMeta?.frontmatter ?? null;
-      
-      let content: string | null = null;
-      const needsContent = this.gistConfig.enabled && 
-                          this.gistConfig.autoGenerate && 
-                          !frontmatter?.[FIELD_NAMES.GIST];
-      
-      if (needsContent) {
-        content = await this.app.vault.cachedRead(file);
-      }
 
-      const modification = this.analyzeFileWithCache(file, frontmatter, content);
+      const modification = this.analyzeFileWithCache(file, frontmatter);
 
       if (modification.changes.length > 0 || modification.needsNewFrontmatter) {
         filesToModify.push(modification);
@@ -143,9 +130,8 @@ export class MigrationEngine {
   }
 
   private analyzeFileWithCache(
-    file: TFile, 
-    frontmatter: Record<string, unknown> | null,
-    content: string | null
+    file: TFile,
+    frontmatter: Record<string, unknown> | null
   ): FileModification {
     const changes: FieldChange[] = [];
     const hasFrontmatter = frontmatter !== null;
@@ -199,40 +185,8 @@ export class MigrationEngine {
       }
     }
 
-    if (this.gistConfig.enabled && this.gistConfig.autoGenerate && content) {
-      const gistRec = this.recommendation.gistField;
-      const hasGist = frontmatter && (
-        frontmatter[FIELD_NAMES.GIST] || 
-        (gistRec.existingField && frontmatter[gistRec.existingField])
-      );
-      
-      if (!hasGist) {
-        const generatedGist = this.generateGistFromContent(content);
-        if (generatedGist) {
-          changes.push({
-            field: FIELD_NAMES.GIST,
-            action: 'add',
-            newValue: generatedGist,
-            reason: 'Auto-generated from first paragraph',
-          });
-
-          if (this.gistConfig.trackSource) {
-            changes.push({
-              field: FIELD_NAMES.GIST_SOURCE,
-              action: 'add',
-              newValue: 'auto',
-              reason: 'Tracking gist source',
-            });
-            changes.push({
-              field: FIELD_NAMES.GIST_DATE,
-              action: 'add',
-              newValue: new Date().toISOString().split('T')[0],
-              reason: 'Tracking gist creation date',
-            });
-          }
-        }
-      }
-    }
+    // Note: gist is intentionally left empty for AI or human to fill later
+    // No auto-generation to avoid YAML corruption issues
 
     return {
       file,
@@ -241,32 +195,6 @@ export class MigrationEngine {
       hasFrontmatter,
       needsNewFrontmatter,
     };
-  }
-
-  private generateGistFromContent(content: string): string | null {
-    const withoutFrontmatter = content.replace(/^---\s*\n[\s\S]*?\n---\s*\n?/, '');
-    
-    const withoutHeaders = withoutFrontmatter.replace(/^#+\s+.*$/gm, '');
-    
-    const paragraphs = withoutHeaders
-      .split(/\n\n+/)
-      .map(p => p.trim())
-      .filter(p => p.length > 20 && !p.startsWith('```') && !p.startsWith('- ') && !p.startsWith('* '));
-
-    if (paragraphs.length === 0) return null;
-
-    let gist = paragraphs[0];
-    
-    gist = gist.replace(/\[\[([^\]|]+)(\|[^\]]+)?\]\]/g, '$1');
-    gist = gist.replace(/\[([^\]]+)\]\([^)]+\)/g, '$1');
-    gist = gist.replace(/[*_`]/g, '');
-    
-    const maxLen = this.gistConfig.maxLength;
-    if (gist.length > maxLen) {
-      gist = gist.slice(0, maxLen - 3) + '...';
-    }
-
-    return gist.length > 30 ? gist : null;
   }
 
   async executeMigration(

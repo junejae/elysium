@@ -7,6 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.1.0] - 2026-01-09
+
+### Removed
+- **BREAKING**: Algorithm-based gist auto-generation removed
+  - `autoGenerate` and `trackSource` options removed from `GistConfig`
+  - `generateGistFromContent()` function removed from `MigrationEngine`
+  - `elysium_gist_source` and `elysium_gist_date` fields no longer used
+  - Gist is now filled by AI (via MCP) or human, avoiding YAML corruption issues
+
+### Changed
+- **Audit**: Gist check now returns "warn" instead of "fail" for empty gist
+  - Empty gist is not critical - can be filled later
+  - Shows list of files with missing gist (first 5)
+- **Plugin Settings**: Simplified gist options
+  - Only "Enable Gist" and "Max length" remain
+  - Removed auto-generate and track source toggles
+
+### Fixed
+- **YAML Corruption**: Fixed issue where algorithm-based gist extraction could
+  corrupt YAML frontmatter by including code blocks, markdown images, or other
+  content in the gist field
+
 ## [1.0.1] - 2026-01-09
 
 ### Fixed

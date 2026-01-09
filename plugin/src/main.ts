@@ -928,28 +928,8 @@ class ElysiumSettingTab extends PluginSettingTab {
 
       if (gistConfig.enabled) {
         new Setting(containerEl)
-          .setName('Auto-generate')
-          .setDesc('Extract summary from first paragraph when gist is missing')
-          .addToggle(toggle => toggle
-            .setValue(gistConfig.autoGenerate)
-            .onChange(async (value) => {
-              config.updateGistConfig({ autoGenerate: value });
-              await config.save();
-            }));
-
-        new Setting(containerEl)
-          .setName('Track source')
-          .setDesc('Track gist origin (human/auto/ai) and date for freshness checks')
-          .addToggle(toggle => toggle
-            .setValue(gistConfig.trackSource)
-            .onChange(async (value) => {
-              config.updateGistConfig({ trackSource: value });
-              await config.save();
-            }));
-
-        new Setting(containerEl)
           .setName('Max length')
-          .setDesc('Maximum characters for auto-generated gist')
+          .setDesc('Maximum characters for gist field')
           .addText(text => text
             .setValue(String(gistConfig.maxLength))
             .onChange(async (value) => {
@@ -959,6 +939,9 @@ class ElysiumSettingTab extends PluginSettingTab {
                 await config.save();
               }
             }));
+
+        const gistNote = containerEl.createEl('p', { cls: 'setting-item-description' });
+        gistNote.setText('Gist is filled by AI (via MCP) or written manually. No auto-generation to avoid YAML corruption.');
       }
 
       containerEl.createEl('h3', { text: 'Inbox' });

@@ -6,8 +6,6 @@ export const FIELD_NAMES = {
   AREA: 'elysium_area',
   GIST: 'elysium_gist',
   TAGS: 'elysium_tags',
-  GIST_SOURCE: 'elysium_gist_source',
-  GIST_DATE: 'elysium_gist_date',
 } as const;
 
 export const DEFAULT_TYPE_VALUES = ['note', 'term', 'project', 'log'] as const;
@@ -16,9 +14,7 @@ export const DEFAULT_AREA_VALUES = ['work', 'tech', 'life', 'career', 'learning'
 
 export interface GistConfig {
   enabled: boolean;
-  autoGenerate: boolean;
   maxLength: number;
-  trackSource: boolean;
 }
 
 export interface SchemaConfig {
@@ -57,9 +53,7 @@ const DEFAULT_CONFIG: ElysiumConfigData = {
     areaValues: [...DEFAULT_AREA_VALUES],
     gist: {
       enabled: false,
-      autoGenerate: true,
       maxLength: 200,
-      trackSource: true,
     },
     tags: { maxCount: 5, lowercase: true },
   },
@@ -165,9 +159,7 @@ export class ElysiumConfig {
         areaValues,
         gist: {
           enabled: parsedGist?.enabled ?? DEFAULT_CONFIG.schema.gist.enabled,
-          autoGenerate: parsedGist?.autoGenerate ?? DEFAULT_CONFIG.schema.gist.autoGenerate,
           maxLength: parsedGist?.maxLength ?? DEFAULT_CONFIG.schema.gist.maxLength,
-          trackSource: parsedGist?.trackSource ?? DEFAULT_CONFIG.schema.gist.trackSource,
         },
         tags: {
           maxCount: parsedTags?.maxCount ?? oldValidation?.maxTags ?? DEFAULT_CONFIG.schema.tags.maxCount,

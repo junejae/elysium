@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.8.0] - 2026-01-09
+
+### Added
+- **CLI/MCP**: `--boost-type` and `--boost-area` flags for related notes search
+  - Re-ranks search results by boosting notes with same type/area as source note
+  - Algorithm: `final_score = 0.7 × semantic_score + 0.3 × metadata_score`
+  - Metadata score: +0.5 for same type, +0.5 for same area
+- **MCP**: `vault_related` tool with `boost_type` and `boost_area` parameters
+- **Config**: `folders` section in `.elysium.json` for configurable folder paths
+  - `notes`: Folder for note/term/log types (default: "Notes")
+  - `projects`: Folder for active projects (default: "Projects")
+  - `archive`: Folder for archived projects (default: "Archive")
+
+### Changed
+- **MCP**: `vault_save` now uses configurable folder paths instead of hardcoded values
+- **CLI**: `elysium init` now displays configured folder paths
+
 ## [0.7.2] - 2026-01-08
 
 ### Changed

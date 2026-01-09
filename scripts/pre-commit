@@ -1,19 +1,20 @@
 #!/bin/bash
-# Pre-commit hook: Run cargo fmt before commit
+# Pre-commit hook: Auto-format Rust code before commit
 # Install: cp scripts/pre-commit .git/hooks/ && chmod +x .git/hooks/pre-commit
 
 set -e
 
 # Only run if we have Rust files staged
 if git diff --cached --name-only | grep -q '\.rs$'; then
-    echo "Running cargo fmt..."
+    echo "🔧 Running cargo fmt..."
     cd mcp
-    cargo fmt --check
-    if [ $? -ne 0 ]; then
-        echo ""
-        echo "❌ Code formatting check failed!"
-        echo "Run 'cargo fmt' in mcp/ directory and re-commit."
-        exit 1
-    fi
-    echo "✅ Code formatting OK"
+    
+    # Auto-format (not just check)
+    cargo fmt
+    
+    # Re-stage any formatted files
+    cd ..
+    git diff --name-only | grep '\.rs$' | xargs -r git add
+    
+    echo "✅ Code formatted and staged"
 fi

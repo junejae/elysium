@@ -96,9 +96,9 @@ fn show_status(db_path: &PathBuf, json: bool) -> Result<()> {
         return Ok(());
     }
 
-    // Open database and get stats
+    // Open database and get stats (use default HTP dimension for stats query)
     use crate::search::vectordb::VectorDB;
-    let db = VectorDB::open(db_path)?;
+    let db = VectorDB::open(db_path, 384)?;
     let stats = db.get_stats()?;
 
     // Get file size

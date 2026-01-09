@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.0] - 2026-01-09
+
+### Changed
+- **BREAKING**: Schema field names are now fixed and not user-configurable
+  - All fields use `elysium_` prefix: `elysium_type`, `elysium_status`, `elysium_area`, `elysium_gist`, `elysium_tags`
+  - Removed field name customization from plugin settings (values still configurable)
+  - Config version upgraded to v3 with auto-migration from v1/v2
+- **Plugin**: Simplified schema configuration
+  - Replaced `filterableFields` structure with flat `typeValues`, `statusValues`, `areaValues`
+  - Added `FIELD_NAMES` constant for consistent field name access
+
+### Migration
+Existing configs (v1/v2) are automatically migrated to v3 format.
+Field values are preserved; only field names change to standardized `elysium_*` format.
+
 ## [0.9.0] - 2026-01-09
 
 ### Added

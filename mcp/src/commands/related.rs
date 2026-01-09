@@ -11,6 +11,8 @@ pub fn run(
     min_tags: Option<usize>,
     semantic: bool,
     limit: Option<usize>,
+    boost_type: bool,
+    boost_area: bool,
     json: bool,
 ) -> Result<()> {
     let paths = VaultPaths::new();
@@ -31,13 +33,21 @@ pub fn run(
     };
 
     if semantic {
-        run_semantic(target_note, limit.unwrap_or(10), json)
+        run_semantic(target_note, limit.unwrap_or(10), boost_type, boost_area, json)
     } else {
         run_tags(target_note, &notes, min_tags, json)
     }
 }
 
-fn run_semantic(target_note: &crate::core::note::Note, limit: usize, json: bool) -> Result<()> {
+fn run_semantic(
+    target_note: &crate::core::note::Note,
+    limit: usize,
+    boost_type: bool,
+    boost_area: bool,
+    json: bool,
+) -> Result<()> {
+    use crate::search::engine::BoostOptions;
+
     let gist = match target_note.gist() {
         Some(g) if !g.is_empty() => g,
         _ => {
@@ -67,7 +77,18 @@ fn run_semantic(target_note: &crate::core::note::Note, limit: usize, json: bool)
     }
 
     let mut engine = SearchEngine::new(&vault_path, &db_path)?;
-    let results = engine.search(gist, limit + 1)?;
+    
+    let results = if boost_type || boost_area {
+        let boost = BoostOptions::from_source(
+            target_note.note_type(),
+            target_note.area(),
+            boost_type,
+            boost_area,
+        );
+        engine.search_with_boost(gist, limit + 1, &boost)?
+    } else {
+        engine.search(gist, limit + 1)?
+    };
 
     let filtered: Vec<_> = results
         .into_iter()

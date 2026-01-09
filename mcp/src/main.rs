@@ -75,6 +75,10 @@ enum Commands {
         min_tags: Option<usize>,
         #[arg(long, short, help = "Limit results (semantic mode)")]
         limit: Option<usize>,
+        #[arg(long, help = "Boost notes with same type (semantic mode)")]
+        boost_type: bool,
+        #[arg(long, help = "Boost notes with same area (semantic mode)")]
+        boost_area: bool,
         #[arg(long, help = "JSON output")]
         json: bool,
     },
@@ -164,8 +168,10 @@ fn main() -> anyhow::Result<()> {
             semantic,
             min_tags,
             limit,
+            boost_type,
+            boost_area,
             json,
-        }) => commands::related::run(&note, min_tags, semantic, limit, json),
+        }) => commands::related::run(&note, min_tags, semantic, limit, boost_type, boost_area, json),
         Some(Commands::Tags { analyze, json }) => commands::tags::run(analyze, json),
         Some(Commands::Fix {
             wikilinks,

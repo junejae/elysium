@@ -22,6 +22,29 @@ pub struct SearchResult {
     pub score: f32,
 }
 
+#[derive(Debug, Clone, Default)]
+pub struct BoostOptions {
+    pub boost_type: bool,
+    pub boost_area: bool,
+    pub source_type: Option<String>,
+    pub source_area: Option<String>,
+}
+
+impl BoostOptions {
+    pub fn from_source(note_type: Option<&str>, area: Option<&str>, boost_type: bool, boost_area: bool) -> Self {
+        Self {
+            boost_type,
+            boost_area,
+            source_type: note_type.map(String::from),
+            source_area: area.map(String::from),
+        }
+    }
+    
+    pub fn is_enabled(&self) -> bool {
+        self.boost_type || self.boost_area
+    }
+}
+
 impl From<(NoteRecord, f32)> for SearchResult {
     fn from((record, score): (NoteRecord, f32)) -> Self {
         Self {
@@ -77,15 +100,44 @@ impl SearchEngine {
         })
     }
 
-    /// Search for notes similar to query
     pub fn search(&mut self, query: &str, limit: usize) -> Result<Vec<SearchResult>> {
         let query_embedding = self.model.embed(query)?;
-
-        // Search in vector database
         let results = self.db.search(&query_embedding, limit)?;
-
-        // Convert to SearchResult
         Ok(results.into_iter().map(SearchResult::from).collect())
+    }
+
+    pub fn search_with_boost(
+        &mut self,
+        query: &str,
+        limit: usize,
+        boost: &BoostOptions,
+    ) -> Result<Vec<SearchResult>> {
+        if !boost.is_enabled() {
+            return self.search(query, limit);
+        }
+
+        let query_embedding = self.model.embed(query)?;
+        let raw_results = self.db.search(&query_embedding, limit * 2)?;
+
+        let mut results: Vec<SearchResult> = raw_results
+            .into_iter()
+            .map(|(record, score)| {
+                let boosted_score = compute_boosted_score(score, &record, boost);
+                SearchResult {
+                    id: record.id,
+                    path: record.path,
+                    title: record.title,
+                    gist: record.gist,
+                    note_type: record.note_type,
+                    area: record.area,
+                    score: boosted_score,
+                }
+            })
+            .collect();
+
+        results.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
+        results.truncate(limit);
+        Ok(results)
     }
 
     /// Index all notes in vault
@@ -163,8 +215,37 @@ impl SearchEngine {
     }
 }
 
-/// Simple search without ONNX model (for testing or fallback)
-/// Uses basic string matching on gist
+fn compute_boosted_score(
+    semantic_score: f32,
+    candidate: &NoteRecord,
+    boost: &BoostOptions,
+) -> f32 {
+    const SEMANTIC_WEIGHT: f32 = 0.7;
+    const METADATA_WEIGHT: f32 = 0.3;
+    const TYPE_BOOST: f32 = 0.5;
+    const AREA_BOOST: f32 = 0.5;
+
+    let mut metadata_score = 0.0;
+
+    if boost.boost_type {
+        if let (Some(src), Some(cand)) = (&boost.source_type, &candidate.note_type) {
+            if src == cand {
+                metadata_score += TYPE_BOOST;
+            }
+        }
+    }
+
+    if boost.boost_area {
+        if let (Some(src), Some(cand)) = (&boost.source_area, &candidate.area) {
+            if src == cand {
+                metadata_score += AREA_BOOST;
+            }
+        }
+    }
+
+    SEMANTIC_WEIGHT * semantic_score + METADATA_WEIGHT * metadata_score
+}
+
 pub fn simple_search(vault_paths: &VaultPaths, query: &str, limit: usize) -> Vec<SearchResult> {
     let notes = collect_all_notes(vault_paths);
     let query_lower = query.to_lowercase();

@@ -61,6 +61,25 @@ fn default_list_limit() -> usize {
     50
 }
 
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct RelatedParams {
+    #[schemars(description = "Note title to find related notes for")]
+    pub note: String,
+    #[schemars(description = "Maximum number of results (default: 10)")]
+    #[serde(default = "default_related_limit")]
+    pub limit: usize,
+    #[schemars(description = "Boost notes with same type as source")]
+    #[serde(default)]
+    pub boost_type: bool,
+    #[schemars(description = "Boost notes with same area as source")]
+    #[serde(default)]
+    pub boost_area: bool,
+}
+
+fn default_related_limit() -> usize {
+    10
+}
+
 /// Parameters for vault_audit tool
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct AuditParams {
@@ -259,7 +278,84 @@ impl VaultService {
         Ok(CallToolResult::success(vec![Content::text(output)]))
     }
 
-    /// Get full content of a specific note
+    #[tool(
+        description = "Find related notes using semantic similarity with optional type/area boosting."
+    )]
+    async fn vault_related(
+        &self,
+        params: Parameters<RelatedParams>,
+    ) -> Result<CallToolResult, McpError> {
+        use crate::search::engine::BoostOptions;
+
+        let vault_paths = self.get_vault_paths();
+        let notes = collect_all_notes(&vault_paths);
+        let note_name = &params.0.note;
+
+        let found = notes.iter().find(|n| {
+            n.name == *note_name
+                || n.path.file_stem().map(|s| s.to_string_lossy().to_string())
+                    == Some(note_name.clone())
+        });
+
+        let source_note = match found {
+            Some(n) => n,
+            None => {
+                return Ok(CallToolResult::success(vec![Content::text(
+                    serde_json::json!({"error": format!("Note '{}' not found", note_name)})
+                        .to_string(),
+                )]));
+            }
+        };
+
+        let gist = match source_note.gist() {
+            Some(g) if !g.is_empty() => g,
+            _ => {
+                return Ok(CallToolResult::success(vec![Content::text(
+                    serde_json::json!({"error": "Note has no gist for semantic search"}).to_string(),
+                )]));
+            }
+        };
+
+        let mut engine = self.get_engine()?;
+        let limit = params.0.limit.max(1).min(50);
+
+        let results = if params.0.boost_type || params.0.boost_area {
+            let boost = BoostOptions::from_source(
+                source_note.note_type(),
+                source_note.area(),
+                params.0.boost_type,
+                params.0.boost_area,
+            );
+            engine
+                .search_with_boost(gist, limit + 1, &boost)
+                .map_err(|e| McpError::internal_error(format!("Search failed: {}", e), None))?
+        } else {
+            engine
+                .search(gist, limit + 1)
+                .map_err(|e| McpError::internal_error(format!("Search failed: {}", e), None))?
+        };
+
+        let filtered: Vec<SearchResultJson> = results
+            .into_iter()
+            .filter(|r| r.title != source_note.name)
+            .take(limit)
+            .map(|r| SearchResultJson {
+                title: r.title,
+                path: r.path,
+                gist: r.gist,
+                note_type: r.note_type,
+                area: r.area,
+                score: r.score,
+            })
+            .collect();
+
+        let output = serde_json::to_string_pretty(&filtered).map_err(|e| {
+            McpError::internal_error(format!("JSON serialization failed: {}", e), None)
+        })?;
+
+        Ok(CallToolResult::success(vec![Content::text(output)]))
+    }
+
     #[tool(
         description = "Get the full content and metadata of a specific note from Second Brain Vault."
     )]
@@ -586,9 +682,12 @@ impl VaultService {
 
 impl VaultService {
     fn get_target_folder(&self, note_type: Option<&str>) -> PathBuf {
+        let vault_paths = self.get_vault_paths();
+        let folders = &vault_paths.config.folders;
+        
         let folder = match note_type {
-            Some("project") => "Projects",
-            _ => "Notes",
+            Some("project") => &folders.projects,
+            _ => &folders.notes,
         };
         let target = self.vault_path.join(folder);
 

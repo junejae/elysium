@@ -91,12 +91,17 @@ fn run_config_init(inbox: Option<String>) -> Result<()> {
     println!("    areas: {:?}", config.schema.areas);
     println!("    max_tags: {}", config.schema.max_tags);
     println!();
+    println!("  folders:");
+    println!("    notes: \"{}\"", config.folders.notes);
+    println!("    projects: \"{}\"", config.folders.projects);
+    println!("    archive: \"{}\"", config.folders.archive);
+    println!();
     println!("  features:");
     println!("    inbox: \"{}\"", config.features.inbox);
     println!();
     println!(
         "{}",
-        "Edit .elysium.json to customize schema and features.".dimmed()
+        "Edit .elysium.json to customize schema, folders, and features.".dimmed()
     );
     println!();
 

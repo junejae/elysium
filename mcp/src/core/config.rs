@@ -11,7 +11,6 @@ use std::path::{Path, PathBuf};
 pub const CONFIG_FILE_NAME: &str = ".elysium.json";
 pub const CONFIG_VERSION: u32 = 1;
 
-/// Main configuration structure
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Config {
     #[serde(default = "default_version")]
@@ -19,6 +18,9 @@ pub struct Config {
 
     #[serde(default)]
     pub schema: SchemaConfig,
+
+    #[serde(default)]
+    pub folders: FoldersConfig,
 
     #[serde(default)]
     pub features: FeatureConfig,
@@ -130,7 +132,40 @@ impl SchemaConfig {
     }
 }
 
-/// Feature toggles
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FoldersConfig {
+    #[serde(default = "default_notes_folder")]
+    pub notes: String,
+
+    #[serde(default = "default_projects_folder")]
+    pub projects: String,
+
+    #[serde(default = "default_archive_folder")]
+    pub archive: String,
+}
+
+fn default_notes_folder() -> String {
+    "Notes".to_string()
+}
+
+fn default_projects_folder() -> String {
+    "Projects".to_string()
+}
+
+fn default_archive_folder() -> String {
+    "Archive".to_string()
+}
+
+impl Default for FoldersConfig {
+    fn default() -> Self {
+        Self {
+            notes: default_notes_folder(),
+            projects: default_projects_folder(),
+            archive: default_archive_folder(),
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FeatureConfig {
     #[serde(default = "default_inbox")]
@@ -158,6 +193,7 @@ impl Default for Config {
         Self {
             version: CONFIG_VERSION,
             schema: SchemaConfig::default(),
+            folders: FoldersConfig::default(),
             features: FeatureConfig::default(),
         }
     }

@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.1] - 2026-01-09
+
+### Fixed
+- **MCP**: `vault_related` tool was not registered in MCP server
+  - Added missing doc comment required by rmcp `tool_router` macro
+  - Tool now properly appears in `tools/list` response
+
 ## [1.0.0] - 2026-01-09
 
 ### Changed

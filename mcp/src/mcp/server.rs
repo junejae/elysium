@@ -278,6 +278,7 @@ impl VaultService {
         Ok(CallToolResult::success(vec![Content::text(output)]))
     }
 
+    /// Find related notes using semantic similarity
     #[tool(
         description = "Find related notes using semantic similarity with optional type/area boosting."
     )]

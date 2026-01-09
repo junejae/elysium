@@ -3,8 +3,9 @@ mod core;
 #[cfg(feature = "mcp")]
 mod mcp;
 mod search;
+mod tags;
 
-use clap::{Parser, Subcommand};
+use clap::{Args, Parser, Subcommand};
 
 #[derive(Parser)]
 #[command(name = "elysium")]
@@ -83,10 +84,8 @@ enum Commands {
         json: bool,
     },
     Tags {
-        #[arg(short, long, help = "Analyze tags and suggest improvements")]
-        analyze: bool,
-        #[arg(long, help = "JSON output")]
-        json: bool,
+        #[command(subcommand)]
+        action: Option<TagsAction>,
     },
     Fix {
         #[arg(long, help = "Fix broken wikilinks")]
@@ -130,6 +129,73 @@ enum Commands {
         json: bool,
         #[arg(long, help = "Use simple string search (no AI)")]
         fallback: bool,
+    },
+}
+
+/// Tag management subcommands
+#[derive(Subcommand)]
+enum TagsAction {
+    /// Analyze tag usage (default)
+    #[command(alias = "analyze")]
+    List {
+        #[arg(short, long, help = "Analyze tags and suggest improvements")]
+        analyze: bool,
+        #[arg(long, help = "JSON output")]
+        json: bool,
+    },
+    /// Initialize tag database with seed tags
+    Init {
+        #[arg(long, help = "Force reinitialize (clear existing)")]
+        force: bool,
+    },
+    /// Suggest tags for given text
+    Suggest {
+        /// Text to analyze (gist or title)
+        text: String,
+        #[arg(short, long, default_value = "5", help = "Number of suggestions")]
+        limit: usize,
+        #[arg(
+            short,
+            long,
+            help = "Enable tag discovery from keywords (not just DB match)"
+        )]
+        discover: bool,
+        #[arg(long, help = "JSON output")]
+        json: bool,
+    },
+    /// Sync tags for all notes based on gist
+    Sync {
+        #[arg(long, help = "Actually apply changes (default: dry-run)")]
+        execute: bool,
+        #[arg(
+            short,
+            long,
+            help = "Enable tag discovery from keywords (not just DB match)"
+        )]
+        discover: bool,
+        #[arg(long, help = "JSON output")]
+        json: bool,
+    },
+    /// Extract tags from existing notes to build tag database
+    Extract {
+        #[arg(long, default_value = "2", help = "Minimum usage count to include tag")]
+        min_usage: usize,
+        #[arg(long, help = "JSON output")]
+        json: bool,
+    },
+    /// Extract keywords from text using Model2Vec tokenizer
+    Keywords {
+        /// Text to analyze
+        text: String,
+        #[arg(
+            short,
+            long,
+            default_value = "10",
+            help = "Number of keywords to extract"
+        )]
+        limit: usize,
+        #[arg(long, help = "JSON output")]
+        json: bool,
     },
 }
 
@@ -187,7 +253,32 @@ fn main() -> anyhow::Result<()> {
         }) => commands::related::run(
             &note, min_tags, semantic, limit, boost_type, boost_area, json,
         ),
-        Some(Commands::Tags { analyze, json }) => commands::tags::run(analyze, json),
+        Some(Commands::Tags { action }) => match action {
+            None
+            | Some(TagsAction::List {
+                analyze: false,
+                json: false,
+            }) => commands::tags::run(false, false),
+            Some(TagsAction::List { analyze, json }) => commands::tags::run(analyze, json),
+            Some(TagsAction::Init { force }) => commands::tags::run_init(force),
+            Some(TagsAction::Suggest {
+                text,
+                limit,
+                discover,
+                json,
+            }) => commands::tags::run_suggest(&text, limit, discover, json),
+            Some(TagsAction::Sync {
+                execute,
+                discover,
+                json,
+            }) => commands::tags::run_sync(execute, discover, json),
+            Some(TagsAction::Extract { min_usage, json }) => {
+                commands::tags::run_extract(min_usage, json)
+            }
+            Some(TagsAction::Keywords { text, limit, json }) => {
+                commands::tags::run_keywords(&text, limit, json)
+            }
+        },
         Some(Commands::Fix {
             wikilinks,
             execute,

@@ -53,6 +53,13 @@ tokio = { version = "1.35", features = ["rt-multi-thread", "macros", "sync", "io
 # SQLite for vector storage and FTS
 rusqlite = { version = "0.32", features = ["bundled"] }
 
+# Model2Vec for semantic tag matching
+model2vec = "0.2"
+
+# Direct model access for keyword extraction
+safetensors = "0.4"
+tokenizers = "0.20"
+
 # File watching
 notify = { version = "6.1", optional = true }
 

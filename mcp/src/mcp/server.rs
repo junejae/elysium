@@ -14,6 +14,8 @@ use crate::core::note::{collect_all_notes, collect_note_names};
 use crate::core::paths::VaultPaths;
 use crate::core::schema::SchemaValidator;
 use crate::search::engine::SearchEngine;
+use crate::tags::keyword::KeywordExtractor;
+use crate::tags::{TagDatabase, TagEmbedder, TagMatcher};
 use std::collections::HashSet;
 
 /// Parameters for vault_search tool
@@ -141,10 +143,59 @@ pub struct SaveParams {
     #[schemars(description = "Similarity threshold for smart strategy (0.0-1.0, default: 0.7)")]
     #[serde(default = "default_similarity_threshold")]
     pub similarity_threshold: Option<f32>,
+
+    /// Auto-generate tags based on gist/title (default: true)
+    #[schemars(description = "Auto-generate tags using semantic matching (default: true)")]
+    #[serde(default = "default_auto_tag")]
+    pub auto_tag: bool,
+
+    /// Maximum number of auto-generated tags (default: 5)
+    #[schemars(description = "Maximum number of auto-generated tags (default: 5)")]
+    #[serde(default = "default_tag_limit")]
+    pub tag_limit: usize,
+
+    /// Enable tag discovery from content keywords (not just DB match)
+    #[schemars(description = "Enable tag discovery from content keywords (default: false)")]
+    #[serde(default)]
+    pub discover: bool,
+}
+
+fn default_auto_tag() -> bool {
+    true
+}
+
+fn default_tag_limit() -> usize {
+    5
 }
 
 fn default_strategy() -> String {
     "create".to_string()
+}
+
+/// Parameters for vault_tags_suggest tool
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct TagsSuggestParams {
+    /// Text to analyze for tag suggestions (gist or title)
+    #[schemars(description = "Text to analyze for tag suggestions")]
+    pub text: String,
+
+    /// Maximum number of tag suggestions (default: 5)
+    #[schemars(description = "Maximum number of suggestions (default: 5)")]
+    #[serde(default = "default_tag_limit")]
+    pub limit: usize,
+}
+
+/// Parameters for vault_tags_analyze tool
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct TagsAnalyzeParams {
+    /// Similarity threshold for merge suggestions (default: 0.7)
+    #[schemars(description = "Similarity threshold for merge suggestions (0.0-1.0, default: 0.7)")]
+    #[serde(default = "default_merge_threshold")]
+    pub threshold: f32,
+}
+
+fn default_merge_threshold() -> f32 {
+    0.7
 }
 
 fn default_similarity_threshold() -> Option<f32> {
@@ -233,6 +284,42 @@ impl VaultService {
     fn get_schema_validator(&self) -> SchemaValidator {
         let vault_paths = self.get_vault_paths();
         SchemaValidator::from_config(&vault_paths.config.schema)
+    }
+
+    /// Get tag matcher for auto-tagging
+    /// Returns None if tag DB is not initialized
+    fn get_tag_matcher(&self) -> Option<TagMatcher> {
+        let tag_db_path = self.vault_path.join(".opencode/tools/data/tags.db");
+
+        if !tag_db_path.exists() {
+            return None;
+        }
+
+        let embedder = TagEmbedder::default_multilingual().ok()?;
+        let database = TagDatabase::open(&tag_db_path).ok()?;
+
+        Some(TagMatcher::new(embedder, database))
+    }
+
+    /// Suggest tags for given text using semantic matching
+    fn suggest_tags(&self, text: &str, limit: usize, discover: bool) -> Vec<String> {
+        let matcher = match self.get_tag_matcher() {
+            Some(m) => m,
+            None => return vec![],
+        };
+
+        // Load keyword extractor if discovery mode is enabled
+        let keyword_extractor = if discover {
+            KeywordExtractor::from_default_cache().ok()
+        } else {
+            None
+        };
+
+        matcher
+            .suggest_tags_with_discovery(text, limit, keyword_extractor.as_ref())
+            .ok()
+            .map(|suggestions| suggestions.into_iter().map(|s| s.tag).collect())
+            .unwrap_or_default()
     }
 }
 
@@ -905,6 +992,153 @@ impl VaultService {
         )]))
     }
 
+    /// Suggest tags for given text using semantic matching
+    #[tool(
+        description = "Suggest tags for text using semantic similarity. Uses Model2Vec embeddings to find relevant tags from the tag database."
+    )]
+    async fn vault_tags_suggest(
+        &self,
+        params: Parameters<TagsSuggestParams>,
+    ) -> Result<CallToolResult, McpError> {
+        let matcher = self.get_tag_matcher().ok_or_else(|| {
+            McpError::internal_error(
+                "Tag database not initialized. Run 'elysium tags init' first.".to_string(),
+                None,
+            )
+        })?;
+
+        let suggestions = matcher
+            .suggest_tags_hybrid(&params.0.text, params.0.limit)
+            .map_err(|e| {
+                McpError::internal_error(format!("Failed to suggest tags: {}", e), None)
+            })?;
+
+        #[derive(Serialize)]
+        struct TagSuggestionResult {
+            tag: String,
+            score: f32,
+            reason: String,
+        }
+
+        let results: Vec<TagSuggestionResult> = suggestions
+            .into_iter()
+            .map(|s| TagSuggestionResult {
+                tag: s.tag,
+                score: s.score,
+                reason: s.reason,
+            })
+            .collect();
+
+        Ok(CallToolResult::success(vec![Content::text(
+            serde_json::to_string_pretty(&serde_json::json!({
+                "input": params.0.text,
+                "suggestions": results,
+                "count": results.len()
+            }))
+            .unwrap(),
+        )]))
+    }
+
+    /// Analyze tags and suggest merges for similar tags
+    #[tool(
+        description = "Analyze tag database and suggest merges for similar tags. Returns pairs of tags that could be merged based on semantic similarity."
+    )]
+    async fn vault_tags_analyze(
+        &self,
+        params: Parameters<TagsAnalyzeParams>,
+    ) -> Result<CallToolResult, McpError> {
+        let matcher = self.get_tag_matcher().ok_or_else(|| {
+            McpError::internal_error(
+                "Tag database not initialized. Run 'elysium tags init' first.".to_string(),
+                None,
+            )
+        })?;
+
+        let merge_suggestions = matcher
+            .analyze_for_merges(params.0.threshold)
+            .map_err(|e| {
+                McpError::internal_error(format!("Failed to analyze tags: {}", e), None)
+            })?;
+
+        #[derive(Serialize)]
+        struct MergeResult {
+            keep: String,
+            merge: String,
+            similarity: f32,
+        }
+
+        let results: Vec<MergeResult> = merge_suggestions
+            .into_iter()
+            .map(|s| MergeResult {
+                keep: s.keep,
+                merge: s.merge,
+                similarity: s.similarity,
+            })
+            .collect();
+
+        // Get tag stats
+        let db = matcher.database();
+        let total_tags = db.tag_count().unwrap_or(0);
+
+        Ok(CallToolResult::success(vec![Content::text(
+            serde_json::to_string_pretty(&serde_json::json!({
+                "total_tags": total_tags,
+                "threshold": params.0.threshold,
+                "merge_suggestions": results,
+                "suggestion_count": results.len()
+            }))
+            .unwrap(),
+        )]))
+    }
+
+    /// List all tags in the database
+    #[tool(
+        description = "List all tags in the tag database with their descriptions and usage counts."
+    )]
+    async fn vault_tags_list(&self) -> Result<CallToolResult, McpError> {
+        let tag_db_path = self.vault_path.join(".opencode/tools/data/tags.db");
+
+        if !tag_db_path.exists() {
+            return Err(McpError::internal_error(
+                "Tag database not initialized. Run 'elysium tags init' first.".to_string(),
+                None,
+            ));
+        }
+
+        let db = TagDatabase::open(&tag_db_path)
+            .map_err(|e| McpError::internal_error(format!("Failed to open tag DB: {}", e), None))?;
+
+        let tags = db
+            .get_all_tags()
+            .map_err(|e| McpError::internal_error(format!("Failed to get tags: {}", e), None))?;
+
+        #[derive(Serialize)]
+        struct TagInfo {
+            name: String,
+            description: String,
+            aliases: Vec<String>,
+            usage_count: i64,
+        }
+
+        let tag_list: Vec<TagInfo> = tags
+            .into_iter()
+            .map(|t| TagInfo {
+                name: t.name,
+                description: t.description,
+                aliases: t.aliases,
+                usage_count: t.usage_count,
+            })
+            .collect();
+
+        Ok(CallToolResult::success(vec![Content::text(
+            serde_json::to_string_pretty(&serde_json::json!({
+                "total": tag_list.len(),
+                "tags": tag_list
+            }))
+            .unwrap(),
+        )]))
+    }
+
     fn build_frontmatter(&self, params: &SaveParams) -> String {
         let mut fm = String::from("---\n");
 
@@ -923,15 +1157,49 @@ impl VaultService {
                 chrono::Local::now().format("%Y-%m-%d")
             ));
         }
-        if let Some(tags) = &params.tags {
-            let tag_list: Vec<&str> = tags.split(',').map(|t| t.trim()).collect();
-            fm.push_str(&format!("elysium_tags: [{}]\n", tag_list.join(", ")));
+
+        // Handle tags: manual + auto-generated
+        let final_tags = self.resolve_tags(params);
+        if !final_tags.is_empty() {
+            fm.push_str(&format!("elysium_tags: [{}]\n", final_tags.join(", ")));
         }
+
         if let Some(source) = &params.source {
             fm.push_str(&format!("source: {}\n", source));
         }
         fm.push_str("---\n\n");
         fm
+    }
+
+    /// Resolve tags: combine manual tags with auto-generated tags
+    fn resolve_tags(&self, params: &SaveParams) -> Vec<String> {
+        let mut tags: Vec<String> = Vec::new();
+
+        // Add manual tags first
+        if let Some(manual_tags) = &params.tags {
+            for tag in manual_tags.split(',').map(|t| t.trim()) {
+                if !tag.is_empty() && !tags.contains(&tag.to_string()) {
+                    tags.push(tag.to_string());
+                }
+            }
+        }
+
+        // Auto-generate tags if enabled and we have gist/title
+        if params.auto_tag {
+            let search_text = params.gist.as_deref().unwrap_or(&params.title);
+            let auto_tags = self.suggest_tags(search_text, params.tag_limit, params.discover);
+
+            for tag in auto_tags {
+                if !tags.contains(&tag) {
+                    tags.push(tag);
+                }
+            }
+
+            // Limit total tags
+            tags.truncate(params.tag_limit);
+        }
+
+        tags
     }
 }
 

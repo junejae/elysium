@@ -10,6 +10,7 @@
 
 pub mod core;
 pub mod search;
+pub mod tags;
 
 // Re-exports for convenience
 pub use core::frontmatter::Frontmatter;

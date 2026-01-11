@@ -130,6 +130,16 @@ enum Commands {
         #[arg(long, help = "Use simple string search (no AI)")]
         fallback: bool,
     },
+
+    // ===== Model Management =====
+    /// Manage Model2Vec models for advanced semantic search
+    Model {
+        /// Subcommand: download, status
+        #[arg(default_value = "status")]
+        action: String,
+        #[arg(long, help = "JSON output")]
+        json: bool,
+    },
 }
 
 /// Tag management subcommands
@@ -304,6 +314,9 @@ fn main() -> anyhow::Result<()> {
             json,
             fallback,
         }) => commands::semantic_search::run(&query, limit, json, fallback),
+
+        // Model Management
+        Some(Commands::Model { action, json }) => commands::model::run(&action, json),
     }
 }
 

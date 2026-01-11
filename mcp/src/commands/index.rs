@@ -4,6 +4,8 @@ use anyhow::Result;
 use colored::Colorize;
 use std::path::PathBuf;
 
+use crate::core::config::Config;
+use crate::search::embedder::SearchConfig;
 use crate::search::engine::SearchEngine;
 
 fn get_default_paths() -> (PathBuf, PathBuf) {
@@ -25,6 +27,24 @@ pub fn run(status_only: bool, rebuild: bool, json: bool) -> Result<()> {
         std::fs::create_dir_all(parent)?;
     }
 
+    // Load config to check for advanced semantic search
+    let config = Config::load(&vault_path);
+    let search_config = if config.features.is_advanced_search_ready() {
+        if !json {
+            println!(
+                "{} Using advanced semantic search (Model2Vec)",
+                "→".dimmed()
+            );
+        }
+        SearchConfig {
+            use_advanced: true,
+            model_path: config.features.get_model_path().map(String::from),
+            model_id: Some(config.features.advanced_semantic_search.model_id.clone()),
+        }
+    } else {
+        SearchConfig::default()
+    };
+
     if rebuild && db_path.exists() {
         std::fs::remove_file(&db_path)?;
         if !json {
@@ -32,7 +52,7 @@ pub fn run(status_only: bool, rebuild: bool, json: bool) -> Result<()> {
         }
     }
 
-    let mut engine = SearchEngine::new(&vault_path, &db_path)?;
+    let mut engine = SearchEngine::with_config(&vault_path, &db_path, search_config)?;
 
     if !json {
         println!("{} Building search index...", "→".dimmed());
@@ -49,6 +69,8 @@ pub fn run(status_only: bool, rebuild: bool, json: bool) -> Result<()> {
                 "skipped": stats.skipped,
                 "failed": stats.failed,
                 "duration_ms": stats.duration_ms,
+                "embedder": engine.embedder_name(),
+                "dimension": engine.embedding_dimension(),
             })
         );
     } else {
@@ -58,6 +80,12 @@ pub fn run(status_only: bool, rebuild: bool, json: bool) -> Result<()> {
             "✓".green().bold(),
             stats.indexed.to_string().cyan(),
             stats.duration_ms as f64 / 1000.0
+        );
+        println!(
+            "  {} Embedder: {} ({}d)",
+            "→".dimmed(),
+            engine.embedder_name().cyan(),
+            engine.embedding_dimension()
         );
         if stats.skipped > 0 {
             println!(

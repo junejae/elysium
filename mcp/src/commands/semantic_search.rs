@@ -4,7 +4,9 @@ use anyhow::Result;
 use colored::Colorize;
 use std::path::PathBuf;
 
+use crate::core::config::Config;
 use crate::core::paths::VaultPaths;
+use crate::search::embedder::SearchConfig;
 use crate::search::engine::{simple_search, SearchEngine};
 
 fn get_default_paths() -> (PathBuf, PathBuf) {
@@ -25,7 +27,25 @@ pub fn run(query: &str, limit: Option<usize>, json: bool, fallback: bool) -> Res
         return run_simple_search(&vault_path, query, limit, json);
     }
 
-    let mut engine = SearchEngine::new(&vault_path, &db_path)?;
+    // Load config to check for advanced semantic search
+    let config = Config::load(&vault_path);
+    let search_config = if config.features.is_advanced_search_ready() {
+        SearchConfig {
+            use_advanced: true,
+            model_path: config.features.get_model_path().map(|p| {
+                if p.starts_with('.') {
+                    vault_path.join(p).to_string_lossy().to_string()
+                } else {
+                    p.to_string()
+                }
+            }),
+            model_id: Some(config.features.advanced_semantic_search.model_id.clone()),
+        }
+    } else {
+        SearchConfig::default()
+    };
+
+    let mut engine = SearchEngine::with_config(&vault_path, &db_path, search_config)?;
     let results = engine.search(query, limit)?;
 
     if json {

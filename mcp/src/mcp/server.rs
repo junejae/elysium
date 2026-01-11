@@ -3,7 +3,7 @@
 use anyhow::Result;
 use rmcp::{
     handler::server::{tool::ToolRouter, wrapper::Parameters},
-    model::{CallToolResult, Content, ServerInfo},
+    model::{CallToolResult, Content, ServerCapabilities, ServerInfo},
     tool, tool_router, ErrorData as McpError, ServerHandler, ServiceExt,
 };
 use schemars::JsonSchema;
@@ -320,6 +320,7 @@ impl VaultService {
                     p.to_string()
                 }
             }),
+            model_id: Some(config.features.advanced_semantic_search.model_id.clone()),
         };
 
         SearchEngine::with_config(&self.vault_path, &self.db_path, search_config)
@@ -1622,6 +1623,7 @@ impl ServerHandler for VaultService {
             instructions: Some(
                 "Second Brain Vault MCP Server. Provides semantic search and note access for Obsidian vault.".to_string()
             ),
+            capabilities: ServerCapabilities::builder().enable_tools().build(),
             ..Default::default()
         }
     }

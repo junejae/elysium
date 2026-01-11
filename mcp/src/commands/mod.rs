@@ -4,6 +4,7 @@ pub mod fix;
 pub mod health;
 pub mod index;
 pub mod init;
+pub mod model;
 pub mod related;
 pub mod search;
 pub mod semantic_search;

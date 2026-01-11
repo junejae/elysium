@@ -128,11 +128,14 @@ impl Embedder for Model2VecEmbedder {
 // Factory function
 // ============================================================================
 
+use crate::core::config::DEFAULT_MODEL2VEC_MODEL;
+
 /// Search configuration for embedder selection
 #[derive(Debug, Clone)]
 pub struct SearchConfig {
     pub use_advanced: bool,
     pub model_path: Option<String>,
+    pub model_id: Option<String>,
 }
 
 impl Default for SearchConfig {
@@ -140,23 +143,37 @@ impl Default for SearchConfig {
         Self {
             use_advanced: false,
             model_path: None,
+            model_id: None,
         }
     }
 }
 
 /// Create embedder based on configuration
+///
+/// Priority:
+/// 1. If use_advanced is false -> HtpEmbedder (default)
+/// 2. If model_path is set -> load from local path
+/// 3. If model_id is set -> download from HuggingFace Hub
+/// 4. Otherwise -> use default model ID from HuggingFace Hub
 pub fn create_embedder(config: &SearchConfig) -> Result<Box<dyn Embedder>> {
-    if config.use_advanced {
-        let model_path = config
-            .model_path
-            .as_ref()
-            .ok_or_else(|| anyhow::anyhow!("Model path required for advanced search"))?;
-
-        let embedder = Model2VecEmbedder::from_path(Path::new(model_path))?;
-        Ok(Box::new(embedder))
-    } else {
-        Ok(Box::new(HtpEmbedder::new()))
+    if !config.use_advanced {
+        return Ok(Box::new(HtpEmbedder::new()));
     }
+
+    // Priority 1: Local path
+    if let Some(path) = &config.model_path {
+        let embedder = Model2VecEmbedder::from_path(Path::new(path))?;
+        return Ok(Box::new(embedder));
+    }
+
+    // Priority 2: Model ID from config or default
+    let model_id = config
+        .model_id
+        .as_deref()
+        .unwrap_or(DEFAULT_MODEL2VEC_MODEL);
+
+    let embedder = Model2VecEmbedder::from_pretrained(model_id)?;
+    Ok(Box::new(embedder))
 }
 
 #[cfg(test)]

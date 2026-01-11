@@ -192,8 +192,11 @@ pub struct FeatureConfig {
     pub advanced_semantic_search: AdvancedSemanticSearchConfig,
 }
 
+/// Default Model2Vec model ID
+pub const DEFAULT_MODEL2VEC_MODEL: &str = "minishlab/potion-multilingual-128M";
+
 /// Configuration for advanced semantic search (Model2Vec)
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AdvancedSemanticSearchConfig {
     #[serde(default)]
     pub enabled: bool,
@@ -203,6 +206,24 @@ pub struct AdvancedSemanticSearchConfig {
 
     #[serde(default, rename = "modelPath")]
     pub model_path: Option<String>,
+
+    #[serde(default = "default_model_id", rename = "modelId")]
+    pub model_id: String,
+}
+
+fn default_model_id() -> String {
+    DEFAULT_MODEL2VEC_MODEL.to_string()
+}
+
+impl Default for AdvancedSemanticSearchConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            model_downloaded: false,
+            model_path: None,
+            model_id: default_model_id(),
+        }
+    }
 }
 
 fn default_inbox() -> String {

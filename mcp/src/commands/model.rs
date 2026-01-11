@@ -17,7 +17,10 @@ pub fn run(subcmd: &str, json: bool) -> Result<()> {
                 println!("{} Unknown subcommand: {}", "!".yellow().bold(), subcmd);
                 println!();
                 println!("Available subcommands:");
-                println!("  {} - Download Model2Vec model for advanced search", "download".cyan());
+                println!(
+                    "  {} - Download Model2Vec model for advanced search",
+                    "download".cyan()
+                );
                 println!("  {} - Show model status", "status".cyan());
             }
             Ok(())
@@ -42,7 +45,10 @@ fn download(json: bool) -> Result<()> {
             println!("{} Downloading model: {}", "→".dimmed(), model_id.cyan());
             println!("  This may take a few minutes on first download...");
             println!();
-            println!("  {} If download fails, run this Python command first:", "ℹ".blue());
+            println!(
+                "  {} If download fails, run this Python command first:",
+                "ℹ".blue()
+            );
             println!("    python -c \"from model2vec import StaticModel; m = StaticModel.from_pretrained('{}'); m.save_pretrained('.opencode/tools/models/potion-multilingual-128M')\"", model_id);
             println!();
         }
@@ -86,7 +92,10 @@ fn download(json: bool) -> Result<()> {
 
             // Update config to mark model as downloaded
             let mut updated_config = config.clone();
-            updated_config.features.advanced_semantic_search.model_downloaded = true;
+            updated_config
+                .features
+                .advanced_semantic_search
+                .model_downloaded = true;
             // Save local path if model was loaded from local
             if local_model_path.exists() {
                 updated_config.features.advanced_semantic_search.model_path =
@@ -94,11 +103,7 @@ fn download(json: bool) -> Result<()> {
             }
             if let Err(e) = updated_config.save(&vault_path) {
                 if !json {
-                    eprintln!(
-                        "{} Could not update config: {}",
-                        "!".yellow().bold(),
-                        e
-                    );
+                    eprintln!("{} Could not update config: {}", "!".yellow().bold(), e);
                 }
             }
 

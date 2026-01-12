@@ -144,6 +144,92 @@ export default class ElysiumPlugin extends Plugin {
     const index = new HnswIndex();
     this.indexer = new Indexer(this.app, this.storage, index, this.elysiumConfig);
     console.log('Indexer initialized');
+
+    // Initialize Advanced Search (Model2Vec) if enabled
+    await this.initializeAdvancedSearch();
+  }
+
+  /**
+   * Initialize Advanced Search with Model2Vec if enabled and model is downloaded
+   */
+  private async initializeAdvancedSearch(): Promise<void> {
+    if (!this.indexer || !this.elysiumConfig) return;
+
+    const advancedConfig = this.elysiumConfig.getAdvancedSemanticSearchConfig();
+    if (advancedConfig.enabled && advancedConfig.modelDownloaded && advancedConfig.modelPath) {
+      try {
+        await this.indexer.enableAdvancedSearch(advancedConfig.modelPath);
+        console.log('[Elysium] Advanced Search (Model2Vec) initialized');
+      } catch (e) {
+        console.error('[Elysium] Failed to initialize Advanced Search:', e);
+        new Notice('Failed to load Model2Vec. Falling back to basic search.');
+      }
+    }
+  }
+
+  /**
+   * Handle Advanced Search setting change - triggers reindex
+   */
+  async handleAdvancedSearchChange(enabled: boolean): Promise<void> {
+    if (!this.indexer || !this.elysiumConfig) return;
+
+    const advancedConfig = this.elysiumConfig.getAdvancedSemanticSearchConfig();
+
+    if (enabled) {
+      if (!advancedConfig.modelDownloaded || !advancedConfig.modelPath) {
+        new Notice('Please download the model first');
+        return;
+      }
+
+      try {
+        await this.indexer.enableAdvancedSearch(advancedConfig.modelPath);
+        new Notice('Reindexing with Model2Vec...');
+        await this.triggerFullReindex();
+        new Notice('Reindexing complete!');
+      } catch (e) {
+        console.error('[Elysium] Failed to enable Advanced Search:', e);
+        new Notice(`Failed to enable Advanced Search: ${e}`);
+      }
+    } else {
+      this.indexer.disableAdvancedSearch();
+      new Notice('Reindexing with HTP...');
+      await this.triggerFullReindex();
+      new Notice('Reindexing complete!');
+    }
+  }
+
+  /**
+   * Trigger a full reindex of the vault
+   */
+  async triggerFullReindex(): Promise<void> {
+    if (!this.indexer || !this.storage) return;
+
+    this.setIndexingState(true);
+    const startTime = Date.now();
+
+    try {
+      // Clear existing index
+      await this.storage.clearAll();
+
+      // Create new index
+      const index = new HnswIndex();
+      this.indexer.setIndex(index);
+
+      // Full reindex
+      const count = await this.indexer.fullReindex((current, total) => {
+        const pct = Math.round((current / total) * 100);
+        if (this.statusBarEl) {
+          this.statusBarEl.setText(`Indexing: ${pct}%`);
+        }
+      });
+
+      const elapsed = Date.now() - startTime;
+      const mode = this.indexer.getEmbeddingMode();
+      console.log(`[Elysium] Full reindex complete: ${count} notes indexed with ${mode} (${elapsed}ms)`);
+    } finally {
+      this.setIndexingState(false);
+      this.updateStatusBar();
+    }
   }
 
   private setupVaultWatcher(): void {
@@ -484,12 +570,9 @@ export default class ElysiumPlugin extends Plugin {
   }
 
   searchVault(query: string, k: number = 10): Array<{ path: string; score: number }> {
-    const index = this.indexer?.getIndex();
-    if (!index || index.is_empty()) {
-      return [];
-    }
+    if (!this.indexer) return [];
 
-    const results = index.search_text(query, k, 50) as Array<[string, number]>;
+    const results = this.indexer.search(query, k, 50);
     return results.map(([path, score]) => ({ path, score }));
   }
 
@@ -912,7 +995,7 @@ class ElysiumSettingTab extends PluginSettingTab {
       containerEl.createEl('h3', { text: 'Advanced Semantic Search' });
 
       const advancedDesc = containerEl.createEl('p', { cls: 'setting-item-description' });
-      advancedDesc.setText('Enable Model2Vec for improved semantic search accuracy and tag recommendations. This uses a ~8MB neural network model.');
+      advancedDesc.setText('Enable Model2Vec for improved semantic search accuracy and tag recommendations. This uses a ~128MB neural network model.');
 
       const advancedConfig = config.getAdvancedSemanticSearchConfig();
       const modelDownloader = new ModelDownloader(this.app, this.plugin.manifest);
@@ -930,9 +1013,8 @@ class ElysiumSettingTab extends PluginSettingTab {
             }
             config.updateAdvancedSemanticSearchConfig({ enabled: value });
             await config.save();
-            if (value) {
-              new Notice('Advanced Search enabled. Please reindex your vault.');
-            }
+            // Trigger reindex with new embedding mode
+            await this.plugin.handleAdvancedSearchChange(value);
           }));
 
       const modelStatus = advancedConfig.modelDownloaded
@@ -968,7 +1050,7 @@ class ElysiumSettingTab extends PluginSettingTab {
               });
           } else {
             button
-              .setButtonText('Download Model (~8MB)')
+              .setButtonText('Download Model (~128MB)')
               .setCta()
               .onClick(async () => {
                 button.setButtonText('Downloading...');
@@ -986,7 +1068,7 @@ class ElysiumSettingTab extends PluginSettingTab {
                   this.display();
                 } catch (e) {
                   new Notice(`Download failed: ${e instanceof Error ? e.message : 'Unknown error'}`);
-                  button.setButtonText('Download Model (~8MB)');
+                  button.setButtonText('Download Model (~128MB)');
                   button.setDisabled(false);
                 }
               });

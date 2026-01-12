@@ -1,21 +1,23 @@
 import { App, PluginManifest } from 'obsidian';
 
+// potion-multilingual-128M: 101 languages including Korean, based on BGE-M3
+// https://huggingface.co/minishlab/potion-multilingual-128M
 const MODEL2VEC_FILES = {
   model: {
-    url: 'https://huggingface.co/minishlab/potion-base-8M/resolve/main/model.safetensors',
+    url: 'https://huggingface.co/minishlab/potion-multilingual-128M/resolve/main/model.safetensors',
     filename: 'model.safetensors',
   },
   tokenizer: {
-    url: 'https://huggingface.co/minishlab/potion-base-8M/resolve/main/tokenizer.json',
+    url: 'https://huggingface.co/minishlab/potion-multilingual-128M/resolve/main/tokenizer.json',
     filename: 'tokenizer.json',
   },
   config: {
-    url: 'https://huggingface.co/minishlab/potion-base-8M/resolve/main/config.json',
+    url: 'https://huggingface.co/minishlab/potion-multilingual-128M/resolve/main/config.json',
     filename: 'config.json',
   },
 };
 
-const MODEL_VERSION = 'potion-base-8M';
+const MODEL_VERSION = 'potion-multilingual-128M';
 
 export interface DownloadProgress {
   file: string;

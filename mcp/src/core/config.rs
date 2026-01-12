@@ -32,22 +32,79 @@ pub struct Config {
 
     #[serde(default)]
     pub features: FeatureConfig,
+
+    /// Inbox configuration (plugin format - root level object)
+    #[serde(default)]
+    pub inbox: InboxConfig,
+}
+
+/// Inbox configuration (from plugin)
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct InboxConfig {
+    #[serde(default = "default_true")]
+    pub enabled: bool,
+
+    #[serde(default = "default_inbox")]
+    pub path: String,
+}
+
+impl Default for InboxConfig {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            path: default_inbox(),
+        }
+    }
 }
 
 fn default_version() -> u32 {
     CONFIG_VERSION
 }
 
+/// Gist configuration (from plugin)
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct GistConfig {
+    #[serde(default)]
+    pub enabled: bool,
+
+    #[serde(default = "default_gist_max_length", rename = "maxLength")]
+    pub max_length: usize,
+}
+
+fn default_gist_max_length() -> usize {
+    200
+}
+
+/// Tags configuration (from plugin)
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TagsConfig {
+    #[serde(default = "default_max_tags", rename = "maxCount")]
+    pub max_count: usize,
+
+    #[serde(default = "default_true")]
+    pub lowercase: bool,
+}
+
+impl Default for TagsConfig {
+    fn default() -> Self {
+        Self {
+            max_count: default_max_tags(),
+            lowercase: true,
+        }
+    }
+}
+
 /// Schema validation configuration
+/// Supports both MCP format (types/statuses/areas) and plugin format (typeValues/statusValues/areaValues)
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SchemaConfig {
-    #[serde(default = "default_types")]
+    #[serde(default = "default_types", alias = "typeValues")]
     pub types: Vec<String>,
 
-    #[serde(default = "default_statuses")]
+    #[serde(default = "default_statuses", alias = "statusValues")]
     pub statuses: Vec<String>,
 
-    #[serde(default = "default_areas")]
+    #[serde(default = "default_areas", alias = "areaValues")]
     pub areas: Vec<String>,
 
     #[serde(default = "default_required_fields")]
@@ -61,6 +118,14 @@ pub struct SchemaConfig {
 
     #[serde(default)]
     pub allow_hierarchical_tags: bool,
+
+    /// Gist configuration (from plugin)
+    #[serde(default)]
+    pub gist: GistConfig,
+
+    /// Tags configuration (from plugin)
+    #[serde(default)]
+    pub tags: TagsConfig,
 }
 
 fn default_types() -> Vec<String> {
@@ -118,6 +183,8 @@ impl Default for SchemaConfig {
             max_tags: default_max_tags(),
             lowercase_tags: true,
             allow_hierarchical_tags: false,
+            gist: GistConfig::default(),
+            tags: TagsConfig::default(),
         }
     }
 }
@@ -265,6 +332,7 @@ impl Default for Config {
             schema: SchemaConfig::default(),
             folders: FoldersConfig::default(),
             features: FeatureConfig::default(),
+            inbox: InboxConfig::default(),
         }
     }
 }
@@ -340,8 +408,18 @@ impl Config {
     pub fn resolve_paths(&self, vault_root: &Path) -> ResolvedPaths {
         ResolvedPaths {
             root: vault_root.to_path_buf(),
-            inbox: vault_root.join(&self.features.inbox),
+            inbox: vault_root.join(&self.inbox.path),
         }
+    }
+
+    /// Get the inbox path (from root-level inbox config)
+    pub fn get_inbox_path(&self) -> &str {
+        &self.inbox.path
+    }
+
+    /// Check if inbox is enabled
+    pub fn is_inbox_enabled(&self) -> bool {
+        self.inbox.enabled
     }
 }
 
@@ -366,10 +444,44 @@ mod tests {
 
     #[test]
     fn test_parse_partial_config() {
+        // Test legacy format (features.inbox as string)
         let json = r#"{"features": {"inbox": "my-inbox.md"}}"#;
         let config: Config = serde_json::from_str(json).unwrap();
         assert_eq!(config.features.inbox, "my-inbox.md");
         assert!(config.features.wikilinks);
+    }
+
+    #[test]
+    fn test_parse_plugin_format() {
+        // Test plugin format (inbox as object at root level)
+        let json = r#"{"inbox": {"enabled": true, "path": "inbox.md"}}"#;
+        let config: Config = serde_json::from_str(json).unwrap();
+        assert!(config.inbox.enabled);
+        assert_eq!(config.inbox.path, "inbox.md");
+    }
+
+    #[test]
+    fn test_parse_plugin_schema_aliases() {
+        // Test plugin schema field aliases (typeValues -> types, etc.)
+        let json =
+            r#"{"schema": {"typeValues": ["note", "term"], "areaValues": ["work", "life"]}}"#;
+        let config: Config = serde_json::from_str(json).unwrap();
+        assert_eq!(config.schema.types, vec!["note", "term"]);
+        assert_eq!(config.schema.areas, vec!["work", "life"]);
+    }
+
+    #[test]
+    fn test_parse_advanced_semantic_search() {
+        // Test advancedSemanticSearch config
+        let json = r#"{"features": {"advancedSemanticSearch": {"enabled": true, "modelDownloaded": true, "modelPath": "/path/to/model"}}}"#;
+        let config: Config = serde_json::from_str(json).unwrap();
+        assert!(config.features.advanced_semantic_search.enabled);
+        assert!(config.features.advanced_semantic_search.model_downloaded);
+        assert_eq!(
+            config.features.advanced_semantic_search.model_path,
+            Some("/path/to/model".to_string())
+        );
+        assert!(config.features.is_advanced_search_ready());
     }
 
     #[test]

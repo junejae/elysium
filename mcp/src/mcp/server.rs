@@ -14,6 +14,7 @@ use crate::core::note::{collect_all_notes, collect_note_names};
 use crate::core::paths::VaultPaths;
 use crate::core::schema::SchemaValidator;
 use crate::search::engine::SearchEngine;
+use crate::search::PluginSearchEngine;
 use crate::tags::keyword::KeywordExtractor;
 use crate::tags::{TagDatabase, TagEmbedder, TagMatcher};
 use std::collections::HashSet;
@@ -305,6 +306,15 @@ impl VaultService {
         }
     }
 
+    /// Get plugin search engine (reads index exported by Obsidian plugin)
+    fn get_plugin_engine(&self) -> Result<PluginSearchEngine, McpError> {
+        PluginSearchEngine::load(&self.vault_path).map_err(|e| {
+            McpError::internal_error(format!("Failed to load plugin index: {}", e), None)
+        })
+    }
+
+    /// Legacy: Get self-managed search engine (deprecated, use plugin index instead)
+    #[allow(dead_code)]
     fn get_engine(&self) -> Result<SearchEngine, McpError> {
         use crate::search::SearchConfig;
 
@@ -383,7 +393,7 @@ impl VaultService {
         &self,
         params: Parameters<SearchParams>,
     ) -> Result<CallToolResult, McpError> {
-        let mut engine = self.get_engine()?;
+        let engine = self.get_plugin_engine()?;
         // Clamp limit: default 5, max 100 (DoS prevention)
         let limit = params.0.limit.max(1).min(100);
         let limit = if limit == 1 && params.0.limit == 0 {
@@ -423,8 +433,6 @@ impl VaultService {
         &self,
         params: Parameters<RelatedParams>,
     ) -> Result<CallToolResult, McpError> {
-        use crate::search::engine::BoostOptions;
-
         let vault_paths = self.get_vault_paths();
         let notes = collect_all_notes(&vault_paths);
         let note_name = &params.0.note;
@@ -455,24 +463,14 @@ impl VaultService {
             }
         };
 
-        let mut engine = self.get_engine()?;
+        let engine = self.get_plugin_engine()?;
         let limit = params.0.limit.max(1).min(50);
 
-        let results = if params.0.boost_type || params.0.boost_area {
-            let boost = BoostOptions::from_source(
-                source_note.note_type(),
-                source_note.area(),
-                params.0.boost_type,
-                params.0.boost_area,
-            );
-            engine
-                .search_with_boost(gist, limit + 1, &boost)
-                .map_err(|e| McpError::internal_error(format!("Search failed: {}", e), None))?
-        } else {
-            engine
-                .search(gist, limit + 1)
-                .map_err(|e| McpError::internal_error(format!("Search failed: {}", e), None))?
-        };
+        // Note: boost_type and boost_area are currently ignored when using plugin index
+        // TODO: Implement boost in PluginSearchEngine if needed
+        let results = engine
+            .search(gist, limit + 1)
+            .map_err(|e| McpError::internal_error(format!("Search failed: {}", e), None))?;
 
         let filtered: Vec<SearchResultJson> = results
             .into_iter()

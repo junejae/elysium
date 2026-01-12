@@ -45,7 +45,7 @@ fn run_config_init(inbox: Option<String>) -> Result<()> {
     let mut config = Config::load(&vault_root);
 
     if let Some(inbox_path) = &inbox {
-        config.features.inbox = inbox_path.clone();
+        config.inbox.path = inbox_path.clone();
     }
 
     let existed = config_path.exists();
@@ -57,7 +57,7 @@ fn run_config_init(inbox: Option<String>) -> Result<()> {
         println!("{} Created {}", "✓".green(), config_path.display());
     }
 
-    let inbox_path = vault_root.join(&config.features.inbox);
+    let inbox_path = vault_root.join(&config.inbox.path);
     if !inbox_path.exists() {
         if let Some(parent) = inbox_path.parent() {
             if !parent.exists() {
@@ -92,8 +92,9 @@ fn run_config_init(inbox: Option<String>) -> Result<()> {
     println!("    projects: \"{}\"", config.folders.projects);
     println!("    archive: \"{}\"", config.folders.archive);
     println!();
-    println!("  features:");
-    println!("    inbox: \"{}\"", config.features.inbox);
+    println!("  inbox:");
+    println!("    enabled: {}", config.inbox.enabled);
+    println!("    path: \"{}\"", config.inbox.path);
     println!();
     println!(
         "{}",

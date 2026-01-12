@@ -1,9 +1,13 @@
 mod hnsw;
+mod model2vec;
 
 use wasm_bindgen::prelude::*;
 use std::f64::consts::PI;
 
+/// HTP embedding dimension
 const EMBEDDING_DIM: usize = 384;
+/// Model2Vec embedding dimension
+pub const MODEL2VEC_DIM: usize = 256;
 const NUM_MODULI: usize = EMBEDDING_DIM / 2;
 
 static COPRIME_MODULI: &[u64] = &[
@@ -167,6 +171,89 @@ impl Default for HnswIndex {
     fn default() -> Self {
         Self::new()
     }
+}
+
+// ============================================================================
+// Model2Vec Encoder (256D neural network embeddings)
+// ============================================================================
+
+/// Model2Vec encoder for advanced semantic search
+///
+/// Usage from JavaScript:
+/// ```js
+/// const encoder = new Model2VecEncoder();
+/// await encoder.load(modelBytes, tokenizerBytes, configBytes);
+/// const embedding = encoder.encode("hello world");
+/// ```
+#[wasm_bindgen]
+pub struct Model2VecEncoder {
+    inner: Option<model2vec::Model2Vec>,
+}
+
+#[wasm_bindgen]
+impl Model2VecEncoder {
+    #[wasm_bindgen(constructor)]
+    pub fn new() -> Self {
+        Self { inner: None }
+    }
+
+    /// Load model from memory buffers
+    ///
+    /// # Arguments
+    /// * `model_buffer` - Contents of model.safetensors
+    /// * `tokenizer_buffer` - Contents of tokenizer.json
+    /// * `config_buffer` - Contents of config.json
+    pub fn load(
+        &mut self,
+        model_buffer: &[u8],
+        tokenizer_buffer: &[u8],
+        config_buffer: &[u8],
+    ) -> Result<(), JsValue> {
+        let model = model2vec::Model2Vec::from_buffers(
+            model_buffer,
+            tokenizer_buffer,
+            config_buffer,
+        )
+        .map_err(|e| JsValue::from_str(&e))?;
+
+        self.inner = Some(model);
+        Ok(())
+    }
+
+    /// Encode text to 256D embedding vector
+    pub fn encode(&self, text: &str) -> Result<Vec<f32>, JsValue> {
+        match &self.inner {
+            Some(model) => Ok(model.encode(text)),
+            None => Err(JsValue::from_str("Model not loaded. Call load() first.")),
+        }
+    }
+
+    /// Check if model is loaded
+    pub fn is_loaded(&self) -> bool {
+        self.inner.is_some()
+    }
+
+    /// Get embedding dimension (256 for potion-base-8M)
+    pub fn dim(&self) -> usize {
+        self.inner.as_ref().map(|m| m.dim()).unwrap_or(MODEL2VEC_DIM)
+    }
+
+    /// Get vocabulary size
+    pub fn vocab_size(&self) -> usize {
+        self.inner.as_ref().map(|m| m.vocab_size()).unwrap_or(0)
+    }
+}
+
+impl Default for Model2VecEncoder {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+/// Get Model2Vec embedding dimension
+#[wasm_bindgen]
+pub fn get_model2vec_dim() -> usize {
+    MODEL2VEC_DIM
 }
 
 #[cfg(test)]

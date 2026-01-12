@@ -19,6 +19,13 @@ pub const PLUGIN_CONFIG_PATH: &str = ".obsidian/plugins/elysium/config.json";
 pub const LEGACY_CONFIG_FILE: &str = ".elysium.json";
 pub const CONFIG_VERSION: u32 = 1;
 
+/// Plugin data directory (unified location for all MCP data)
+pub const PLUGIN_DATA_DIR: &str = ".obsidian/plugins/elysium/data";
+/// Search database filename
+pub const SEARCH_DB_FILE: &str = "search.db";
+/// Tag database filename
+pub const TAG_DB_FILE: &str = "tags.db";
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Config {
     #[serde(default = "default_version")]
@@ -406,10 +413,7 @@ impl Config {
 
     /// Get resolved paths based on vault root
     pub fn resolve_paths(&self, vault_root: &Path) -> ResolvedPaths {
-        ResolvedPaths {
-            root: vault_root.to_path_buf(),
-            inbox: vault_root.join(&self.inbox.path),
-        }
+        ResolvedPaths::from_root(vault_root, &self.inbox.path)
     }
 
     /// Get the inbox path (from root-level inbox config)
@@ -428,6 +432,23 @@ impl Config {
 pub struct ResolvedPaths {
     pub root: PathBuf,
     pub inbox: PathBuf,
+    pub data_dir: PathBuf,
+    pub search_db: PathBuf,
+    pub tag_db: PathBuf,
+}
+
+impl ResolvedPaths {
+    /// Create resolved paths from vault root
+    pub fn from_root(vault_root: &Path, inbox_path: &str) -> Self {
+        let data_dir = vault_root.join(PLUGIN_DATA_DIR);
+        Self {
+            root: vault_root.to_path_buf(),
+            inbox: vault_root.join(inbox_path),
+            data_dir: data_dir.clone(),
+            search_db: data_dir.join(SEARCH_DB_FILE),
+            tag_db: data_dir.join(TAG_DB_FILE),
+        }
+    }
 }
 
 #[cfg(test)]

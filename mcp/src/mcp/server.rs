@@ -8,7 +8,7 @@ use rmcp::{
 };
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use crate::core::note::{collect_all_notes, collect_note_names};
 use crate::core::paths::VaultPaths;
@@ -296,13 +296,63 @@ pub struct VaultService {
 
 impl VaultService {
     pub fn new(vault_path: PathBuf) -> Self {
-        let tools_path = vault_path.join(".opencode/tools");
-        let db_path = tools_path.join("data/search.db");
+        let config = crate::core::config::Config::load(&vault_path);
+        let paths = config.resolve_paths(&vault_path);
+        let db_path = paths.search_db.clone();
+
+        // Check for legacy DB locations and warn if migration needed
+        Self::check_legacy_db_migration(&vault_path, &paths);
 
         Self {
             vault_path,
             db_path,
             tool_router: Self::tool_router(),
+        }
+    }
+
+    /// Check for legacy DB files and print migration guidance
+    fn check_legacy_db_migration(vault_path: &Path, paths: &crate::core::config::ResolvedPaths) {
+        let legacy_search_db = vault_path.join(".opencode/tools/data/search.db");
+        let legacy_tag_db = vault_path.join(".claude/data/tags.db");
+
+        let mut has_legacy = false;
+
+        if legacy_search_db.exists() && !paths.search_db.exists() {
+            eprintln!(
+                "[Migration] Legacy search.db found at: {}",
+                legacy_search_db.display()
+            );
+            has_legacy = true;
+        }
+
+        if legacy_tag_db.exists() && !paths.tag_db.exists() {
+            eprintln!(
+                "[Migration] Legacy tags.db found at: {}",
+                legacy_tag_db.display()
+            );
+            has_legacy = true;
+        }
+
+        if has_legacy {
+            eprintln!(
+                "[Migration] New unified location: {}",
+                paths.data_dir.display()
+            );
+            eprintln!("[Migration] To migrate, move DB files to the new location:");
+            if legacy_search_db.exists() {
+                eprintln!(
+                    "  mv \"{}\" \"{}\"",
+                    legacy_search_db.display(),
+                    paths.search_db.display()
+                );
+            }
+            if legacy_tag_db.exists() {
+                eprintln!(
+                    "  mv \"{}\" \"{}\"",
+                    legacy_tag_db.display(),
+                    paths.tag_db.display()
+                );
+            }
         }
     }
 
@@ -349,16 +399,22 @@ impl VaultService {
     /// Get tag matcher for auto-tagging
     /// Returns None if tag DB is not initialized
     fn get_tag_matcher(&self) -> Option<TagMatcher> {
-        let tag_db_path = self.vault_path.join(".claude/data/tags.db");
+        let paths = self.get_resolved_paths();
 
-        if !tag_db_path.exists() {
+        if !paths.tag_db.exists() {
             return None;
         }
 
         let embedder = TagEmbedder::default_multilingual().ok()?;
-        let database = TagDatabase::open(&tag_db_path).ok()?;
+        let database = TagDatabase::open(&paths.tag_db).ok()?;
 
         Some(TagMatcher::new(embedder, database))
+    }
+
+    /// Get resolved paths helper
+    fn get_resolved_paths(&self) -> crate::core::config::ResolvedPaths {
+        let config = crate::core::config::Config::load(&self.vault_path);
+        config.resolve_paths(&self.vault_path)
     }
 
     /// Suggest tags for given text using semantic matching
@@ -1144,16 +1200,16 @@ impl VaultService {
         description = "List all tags in the tag database with their descriptions and usage counts."
     )]
     async fn vault_tags_list(&self) -> Result<CallToolResult, McpError> {
-        let tag_db_path = self.vault_path.join(".claude/data/tags.db");
+        let paths = self.get_resolved_paths();
 
-        if !tag_db_path.exists() {
+        if !paths.tag_db.exists() {
             return Err(McpError::internal_error(
                 "Tag database not initialized. Run 'elysium tags init' first.".to_string(),
                 None,
             ));
         }
 
-        let db = TagDatabase::open(&tag_db_path)
+        let db = TagDatabase::open(&paths.tag_db)
             .map_err(|e| McpError::internal_error(format!("Failed to open tag DB: {}", e), None))?;
 
         let tags = db

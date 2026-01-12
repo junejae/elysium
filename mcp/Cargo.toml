@@ -1,6 +1,6 @@
 [package]
 name = "elysium-mcp"
-version = "1.6.0"
+version = "2.0.0"
 edition = "2021"
 description = "MCP server for Obsidian-based Second Brain with AI-powered semantic search"
 authors = ["junejae"]
@@ -20,9 +20,6 @@ name = "elysium"
 path = "src/main.rs"
 
 [dependencies]
-# CLI
-clap = { version = "4.5", features = ["derive"] }
-
 # Serialization
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
@@ -44,8 +41,7 @@ chrono = { version = "0.4", features = ["serde"] }
 anyhow = "1.0"
 thiserror = "1.0"
 
-# Output formatting
-colored = "2.1"
+# Unicode support
 unicode-width = "0.2"
 
 # Async runtime (for MCP server)

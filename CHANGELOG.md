@@ -7,6 +7,38 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.0.0] - 2026-01-12
+
+### Removed
+- **BREAKING**: CLI commands completely removed
+  - All `elysium <command>` CLI commands no longer available
+  - Removed: `init`, `validate`, `audit`, `status`, `health`, `search`, `semantic-search`, `index`, `related`, `tags`, `fix`, `connect`, `model`
+  - Binary now only starts MCP server (no subcommands)
+
+### Changed
+- **Architecture**: Elysium is now MCP server + Obsidian plugin only
+  - CLI functionality fully replaced by MCP tools
+  - Use `vault_audit`, `vault_status`, `vault_search` etc. via MCP
+- **Dependencies**: Removed `clap` (CLI parsing) and `colored` (CLI output)
+- **Binary size**: Reduced due to removed CLI code (~3K LOC)
+
+### Migration Guide
+```
+# Before (v1.x) - CLI commands
+elysium validate
+elysium audit
+elysium status
+elysium search "query"
+elysium ss "query"
+
+# After (v2.0) - MCP tools only
+vault_audit(quick=false, verbose=true)
+vault_status()
+vault_search(query="...")
+```
+
+Use Claude Code, Claude Desktop, or any MCP client to access Elysium functionality.
+
 ## [1.4.0] - 2026-01-09
 
 ### Added

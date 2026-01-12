@@ -349,7 +349,7 @@ impl VaultService {
     /// Get tag matcher for auto-tagging
     /// Returns None if tag DB is not initialized
     fn get_tag_matcher(&self) -> Option<TagMatcher> {
-        let tag_db_path = self.vault_path.join(".opencode/tools/data/tags.db");
+        let tag_db_path = self.vault_path.join(".claude/data/tags.db");
 
         if !tag_db_path.exists() {
             return None;
@@ -1144,7 +1144,7 @@ impl VaultService {
         description = "List all tags in the tag database with their descriptions and usage counts."
     )]
     async fn vault_tags_list(&self) -> Result<CallToolResult, McpError> {
-        let tag_db_path = self.vault_path.join(".opencode/tools/data/tags.db");
+        let tag_db_path = self.vault_path.join(".claude/data/tags.db");
 
         if !tag_db_path.exists() {
             return Err(McpError::internal_error(

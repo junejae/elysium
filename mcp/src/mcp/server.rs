@@ -29,6 +29,16 @@ pub struct SearchParams {
     #[schemars(description = "Maximum number of results (default: 5)")]
     #[serde(default = "default_limit")]
     pub limit: usize,
+    /// Filter by note type (note, term, project, log, lesson)
+    #[schemars(description = "Filter by type: note, term, project, log, lesson")]
+    #[serde(default)]
+    pub note_type: Option<String>,
+    /// Filter by area (work, tech, life, career, learning, reference, defense, prosecutor, judge)
+    #[schemars(
+        description = "Filter by area: work, tech, life, career, learning, reference, defense, prosecutor, judge"
+    )]
+    #[serde(default)]
+    pub area: Option<String>,
 }
 
 fn default_limit() -> usize {
@@ -443,13 +453,20 @@ impl VaultService {
 impl VaultService {
     /// Search notes using semantic similarity
     #[tool(
-        description = "Search Second Brain Vault using semantic similarity. Returns notes with similar meaning to the query based on gist field embeddings."
+        description = "Search Second Brain Vault using semantic similarity. Returns notes with similar meaning to the query based on gist field embeddings. Supports optional type/area filtering."
     )]
     async fn vault_search(
         &self,
         params: Parameters<SearchParams>,
     ) -> Result<CallToolResult, McpError> {
         let engine = self.get_plugin_engine()?;
+        let note_type_filter = &params.0.note_type;
+        let area_filter = &params.0.area;
+
+        // If filtering, fetch more results to account for filtered-out items
+        let has_filter = note_type_filter.is_some() || area_filter.is_some();
+        let fetch_multiplier = if has_filter { 5 } else { 1 };
+
         // Clamp limit: default 5, max 100 (DoS prevention)
         let limit = params.0.limit.max(1).min(100);
         let limit = if limit == 1 && params.0.limit == 0 {
@@ -458,12 +475,26 @@ impl VaultService {
             limit
         };
 
+        let fetch_limit = (limit * fetch_multiplier).min(500);
+
         let results = engine
-            .search(&params.0.query, limit)
+            .search(&params.0.query, fetch_limit)
             .map_err(|e| McpError::internal_error(format!("Search failed: {}", e), None))?;
 
         let json_results: Vec<SearchResultJson> = results
             .into_iter()
+            .filter(|r| {
+                // Apply note_type filter
+                let type_match = note_type_filter
+                    .as_ref()
+                    .map_or(true, |t| r.note_type.as_ref().map_or(false, |nt| nt == t));
+                // Apply area filter
+                let area_match = area_filter
+                    .as_ref()
+                    .map_or(true, |a| r.area.as_ref().map_or(false, |na| na == a));
+                type_match && area_match
+            })
+            .take(limit)
             .map(|r| SearchResultJson {
                 title: r.title,
                 path: r.path,

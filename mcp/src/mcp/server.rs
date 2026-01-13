@@ -1017,10 +1017,8 @@ impl VaultService {
         let vault_paths = self.get_vault_paths();
         let folders = &vault_paths.config.folders;
 
-        let folder = match note_type {
-            Some("project") => &folders.projects,
-            _ => &folders.notes,
-        };
+        // Always use Notes/ folder for flat structure (vault policy)
+        let folder = &folders.notes;
         let target = self.vault_path.join(folder);
 
         if !target.exists() {

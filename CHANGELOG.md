@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.4.1] - 2026-01-13
+
+### Fixed
+- **Flat Structure Policy**: Modified `vault_save` to always use `Notes/` folder regardless of `note_type`
+  - Previously `note_type="project"` created unwanted `Projects/` subdirectory
+  - Now all notes saved in `Notes/` folder maintaining flat structure
+  - Prevents vault policy violation of creating subdirectories
+
 ## [2.0.0] - 2026-01-12
 
 ### Removed

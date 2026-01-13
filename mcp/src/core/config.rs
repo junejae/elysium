@@ -462,7 +462,7 @@ mod tests {
     #[test]
     fn test_default_config() {
         let config = Config::default();
-        assert_eq!(config.version, 1);
+        assert_eq!(config.version, 4);
         assert_eq!(config.schema.types.len(), 5);
         assert!(config.schema.lowercase_tags);
     }

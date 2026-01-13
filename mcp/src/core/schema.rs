@@ -9,7 +9,7 @@ use super::config::SchemaConfig;
 /// Legacy static sets for backward compatibility
 /// These are used when no config is available
 pub fn default_types() -> HashSet<&'static str> {
-    HashSet::from(["note", "term", "project", "log"])
+    HashSet::from(["note", "term", "project", "log", "lesson"])
 }
 
 pub fn default_statuses() -> HashSet<&'static str> {
@@ -17,7 +17,17 @@ pub fn default_statuses() -> HashSet<&'static str> {
 }
 
 pub fn default_areas() -> HashSet<&'static str> {
-    HashSet::from(["work", "tech", "life", "career", "learning", "reference"])
+    HashSet::from([
+        "work",
+        "tech",
+        "life",
+        "career",
+        "learning",
+        "reference",
+        "defense",
+        "prosecutor",
+        "judge",
+    ])
 }
 
 // Keep these for backward compatibility with existing code
@@ -76,7 +86,7 @@ impl std::fmt::Display for SchemaViolation {
             Self::InvalidType(t) => {
                 write!(
                     f,
-                    "Invalid elysium_type '{}' (must be: note|term|project|log)",
+                    "Invalid elysium_type '{}' (must be: note|term|project|log|lesson)",
                     t
                 )
             }
@@ -89,7 +99,7 @@ impl std::fmt::Display for SchemaViolation {
             }
             Self::InvalidArea(a) => write!(
                 f,
-                "Invalid elysium_area '{}' (must be: work|tech|life|career|learning|reference)",
+                "Invalid elysium_area '{}' (must be: work|tech|life|career|learning|reference|defense|prosecutor|judge)",
                 a
             ),
             Self::TooManyTags(n) => write!(f, "Too many elysium_tags: {} (max 5)", n),

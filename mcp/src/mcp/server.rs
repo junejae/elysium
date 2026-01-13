@@ -945,7 +945,7 @@ impl VaultService {
         }
 
         let frontmatter = self.build_frontmatter(params);
-        let full_content = format!("{}# {}\n\n{}", frontmatter, params.title, params.content);
+        let full_content = format!("{}{}", frontmatter, params.content);
 
         std::fs::write(&note_path, &full_content)
             .map_err(|e| McpError::internal_error(format!("Failed to create note: {}", e), None))?;
@@ -975,8 +975,7 @@ impl VaultService {
         match found {
             Some(note) => {
                 let frontmatter = self.build_frontmatter(params);
-                let full_content =
-                    format!("{}# {}\n\n{}", frontmatter, params.title, params.content);
+                let full_content = format!("{}{}", frontmatter, params.content);
 
                 std::fs::write(&note.path, &full_content).map_err(|e| {
                     McpError::internal_error(format!("Failed to update note: {}", e), None)

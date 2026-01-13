@@ -10,14 +10,15 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 
-use crate::core::note::{collect_all_notes, collect_note_names};
+use crate::core::frontmatter::{DEFAULT_FIELDS, STANDARD_FIELDS};
+use crate::core::note::{collect_all_notes, collect_note_names, Note};
 use crate::core::paths::VaultPaths;
 use crate::core::schema::SchemaValidator;
 use crate::search::engine::SearchEngine;
 use crate::search::PluginSearchEngine;
 use crate::tags::keyword::KeywordExtractor;
 use crate::tags::{TagDatabase, TagEmbedder, TagMatcher};
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
 /// Parameters for vault_search tool
 #[derive(Debug, Deserialize, JsonSchema)]
@@ -39,6 +40,12 @@ pub struct SearchParams {
     )]
     #[serde(default)]
     pub area: Option<String>,
+    /// Fields to include in output: "default" (title,path,gist), "standard" (+ type,status,area,tags), "all", or comma-separated list
+    #[schemars(
+        description = "Fields to include: 'default', 'standard', 'all', or comma-separated (e.g., 'title,gist,source')"
+    )]
+    #[serde(default)]
+    pub fields: Option<String>,
 }
 
 fn default_limit() -> usize {
@@ -51,6 +58,12 @@ pub struct GetNoteParams {
     /// Note title (e.g., "GPU 기술 허브")
     #[schemars(description = "Note title to retrieve")]
     pub note: String,
+    /// Fields to include in metadata: "default" (title,path,gist), "standard" (+ type,status,area,tags), "all", or comma-separated list
+    #[schemars(
+        description = "Fields to include: 'default', 'standard', 'all', or comma-separated (e.g., 'title,gist,source')"
+    )]
+    #[serde(default)]
+    pub fields: Option<String>,
 }
 
 /// Parameters for vault_list_notes tool
@@ -68,10 +81,91 @@ pub struct ListNotesParams {
     #[schemars(description = "Maximum results (default: 50)")]
     #[serde(default = "default_list_limit")]
     pub limit: usize,
+    /// Fields to include in output: "default" (title,path,gist), "standard" (+ type,status,area,tags), "all", or comma-separated list
+    #[schemars(
+        description = "Fields to include: 'default', 'standard', 'all', or comma-separated (e.g., 'title,gist,source')"
+    )]
+    #[serde(default)]
+    pub fields: Option<String>,
 }
 
 fn default_list_limit() -> usize {
     50
+}
+
+/// Resolve fields parameter to actual field list
+/// Returns (field_list, is_all)
+fn resolve_fields(fields_param: &Option<String>) -> (Vec<&'static str>, bool) {
+    match fields_param.as_deref() {
+        None | Some("default") => (DEFAULT_FIELDS.to_vec(), false),
+        Some("standard") => (STANDARD_FIELDS.to_vec(), false),
+        Some("all") => (vec![], true), // empty means all fields
+        Some(custom) => {
+            let fields: Vec<&str> = custom.split(',').map(|s| s.trim()).collect();
+            // Convert to static strings by matching known fields
+            let known_fields = [
+                "title",
+                "path",
+                "type",
+                "status",
+                "area",
+                "gist",
+                "tags",
+                "source",
+                "gist_source",
+                "gist_date",
+            ];
+            let filtered: Vec<&'static str> = fields
+                .iter()
+                .filter_map(|f| known_fields.iter().find(|&&k| k == *f).copied())
+                .collect();
+            (filtered, false)
+        }
+    }
+}
+
+/// Build dynamic JSON output for a note based on requested fields
+fn build_note_json(
+    note: &Note,
+    fields_param: &Option<String>,
+) -> HashMap<String, serde_json::Value> {
+    let (requested_fields, is_all) = resolve_fields(fields_param);
+
+    let mut result: HashMap<String, serde_json::Value> = HashMap::new();
+
+    // Always include title and path
+    result.insert(
+        "title".to_string(),
+        serde_json::Value::String(note.name.clone()),
+    );
+    result.insert(
+        "path".to_string(),
+        serde_json::Value::String(note.path.display().to_string()),
+    );
+
+    if is_all {
+        // Include all frontmatter fields
+        if let Some(fm) = &note.frontmatter {
+            for (key, value) in fm.to_json_map() {
+                result.insert(key, value);
+            }
+        }
+    } else {
+        // Include only requested fields from frontmatter
+        if let Some(fm) = &note.frontmatter {
+            let fm_fields = fm.to_json_map();
+            for field in &requested_fields {
+                if *field == "title" || *field == "path" {
+                    continue; // Already added
+                }
+                if let Some(value) = fm_fields.get(*field) {
+                    result.insert(field.to_string(), value.clone());
+                }
+            }
+        }
+    }
+
+    result
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
@@ -145,8 +239,10 @@ pub struct SaveParams {
     #[serde(default)]
     pub gist: Option<String>,
 
-    /// Source URL (for web research notes)
-    #[schemars(description = "Source URL (for notes from web research)")]
+    /// Source URLs (for web research notes, comma-separated)
+    #[schemars(
+        description = "Source URLs (comma-separated, e.g., 'https://a.com, https://b.com')"
+    )]
     #[serde(default)]
     pub source: Option<String>,
 
@@ -481,7 +577,10 @@ impl VaultService {
             .search(&params.0.query, fetch_limit)
             .map_err(|e| McpError::internal_error(format!("Search failed: {}", e), None))?;
 
-        let json_results: Vec<SearchResultJson> = results
+        // Build dynamic JSON based on fields parameter
+        let (requested_fields, is_all) = resolve_fields(&params.0.fields);
+
+        let json_results: Vec<HashMap<String, serde_json::Value>> = results
             .into_iter()
             .filter(|r| {
                 // Apply note_type filter
@@ -495,13 +594,35 @@ impl VaultService {
                 type_match && area_match
             })
             .take(limit)
-            .map(|r| SearchResultJson {
-                title: r.title,
-                path: r.path,
-                gist: r.gist,
-                note_type: r.note_type,
-                area: r.area,
-                score: r.score,
+            .map(|r| {
+                let mut result: HashMap<String, serde_json::Value> = HashMap::new();
+
+                // Always include title, path, and score for search results
+                result.insert("title".to_string(), serde_json::Value::String(r.title));
+                result.insert("path".to_string(), serde_json::Value::String(r.path));
+                result.insert("score".to_string(), serde_json::json!(r.score));
+
+                // Include other fields based on request
+                let include_field =
+                    |field: &str| -> bool { is_all || requested_fields.contains(&field) };
+
+                if include_field("gist") {
+                    if let Some(gist) = r.gist {
+                        result.insert("gist".to_string(), serde_json::Value::String(gist));
+                    }
+                }
+                if include_field("type") {
+                    if let Some(note_type) = r.note_type {
+                        result.insert("type".to_string(), serde_json::Value::String(note_type));
+                    }
+                }
+                if include_field("area") {
+                    if let Some(area) = r.area {
+                        result.insert("area".to_string(), serde_json::Value::String(area));
+                    }
+                }
+
+                result
             })
             .collect();
 
@@ -605,20 +726,13 @@ impl VaultService {
                     McpError::internal_error(format!("Failed to read note: {}", e), None)
                 })?;
 
-                let info = NoteInfoJson {
-                    title: n.name.clone(),
-                    path: n.path.to_string_lossy().to_string(),
-                    note_type: n.note_type().map(String::from),
-                    status: n.status().map(String::from),
-                    area: n.area().map(String::from),
-                    gist: n.gist().map(String::from),
-                    tags: n.tags(),
-                };
+                // Build dynamic metadata based on fields parameter
+                let metadata = build_note_json(&n, &params.0.fields);
+                let metadata_json = serde_json::to_string_pretty(&metadata).unwrap_or_default();
 
                 let output = format!(
                     "## Metadata\n```json\n{}\n```\n\n## Content\n{}",
-                    serde_json::to_string_pretty(&info).unwrap_or_default(),
-                    content
+                    metadata_json, content
                 );
 
                 Ok(CallToolResult::success(vec![Content::text(output)]))
@@ -648,7 +762,9 @@ impl VaultService {
             limit
         };
 
-        let filtered: Vec<NoteInfoJson> = notes
+        // Build dynamic JSON based on fields parameter
+        let fields_param = &params.0.fields;
+        let filtered: Vec<HashMap<String, serde_json::Value>> = notes
             .into_iter()
             .filter(|n| {
                 note_type
@@ -659,15 +775,7 @@ impl VaultService {
                         .map_or(true, |a| n.area().map_or(false, |na| na == a))
             })
             .take(limit)
-            .map(|n| NoteInfoJson {
-                title: n.name.clone(),
-                path: n.path.to_string_lossy().to_string(),
-                note_type: n.note_type().map(String::from),
-                status: n.status().map(String::from),
-                area: n.area().map(String::from),
-                gist: n.gist().map(String::from),
-                tags: n.tags(),
-            })
+            .map(|n| build_note_json(&n, fields_param))
             .collect();
 
         let output = serde_json::to_string_pretty(&filtered).map_err(|e| {
@@ -1440,7 +1548,8 @@ impl VaultService {
         }
 
         if let Some(source) = &params.source {
-            fm.push_str(&format!("source: {}\n", source));
+            let sources: Vec<&str> = source.split(',').map(|s| s.trim()).collect();
+            fm.push_str(&format!("elysium_source: [{}]\n", sources.join(", ")));
         }
         fm.push_str("---\n\n");
         fm

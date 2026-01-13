@@ -66,24 +66,42 @@ impl Note {
     pub fn tags(&self) -> Vec<String> {
         self.frontmatter
             .as_ref()
-            .map(|fm| fm.tags.clone())
+            .map(|fm| fm.tags())
             .unwrap_or_default()
     }
 
     pub fn note_type(&self) -> Option<&str> {
-        self.frontmatter.as_ref()?.note_type.as_deref()
+        self.frontmatter.as_ref()?.note_type()
     }
 
     pub fn status(&self) -> Option<&str> {
-        self.frontmatter.as_ref()?.status.as_deref()
+        self.frontmatter.as_ref()?.status()
     }
 
     pub fn area(&self) -> Option<&str> {
-        self.frontmatter.as_ref()?.area.as_deref()
+        self.frontmatter.as_ref()?.area()
     }
 
     pub fn gist(&self) -> Option<&str> {
-        self.frontmatter.as_ref()?.gist.as_deref()
+        self.frontmatter.as_ref()?.gist()
+    }
+
+    /// Get source URLs (elysium_source)
+    pub fn source(&self) -> Option<Vec<String>> {
+        self.frontmatter.as_ref()?.source()
+    }
+
+    /// Get any dynamic field by key (without elysium_ prefix)
+    pub fn get_field(&self, key: &str) -> Option<&super::frontmatter::FieldValue> {
+        self.frontmatter.as_ref()?.get(key)
+    }
+
+    /// Get all frontmatter fields as JSON map
+    pub fn fields_to_json(&self) -> std::collections::HashMap<String, serde_json::Value> {
+        self.frontmatter
+            .as_ref()
+            .map(|fm| fm.to_json_map())
+            .unwrap_or_default()
     }
 }
 

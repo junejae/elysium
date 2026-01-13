@@ -5,12 +5,15 @@ const STORE_NOTES = 'notes';
 const STORE_INDEX = 'hnsw_index';
 const STORE_META = 'metadata';
 
+// FieldValue matches MCP server's Rust enum
+export type FieldValue = string | string[];
+
 export interface NoteRecord {
   path: string;
   gist: string;
   mtime: number;
   indexed: boolean;
-  fields: Record<string, string>;
+  fields: Record<string, FieldValue>;
   tags?: string[];
 }
 

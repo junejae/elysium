@@ -321,13 +321,14 @@ export class Indexer {
     this.index = index;
   }
 
-  extractFrontmatter(content: string): { gist?: string; fields: Record<string, string>; tags?: string[] } | null {
+  extractFrontmatter(content: string): { gist?: string; fields: Record<string, string | string[]>; tags?: string[] } | null {
     const match = content.match(/^---\s*\n([\s\S]*?)\n---/);
     if (!match) return null;
 
     const frontmatter = match[1];
-    const result: { gist?: string; fields: Record<string, string>; tags?: string[] } = { fields: {} };
-    
+    const result: { gist?: string; fields: Record<string, string | string[]>; tags?: string[] } = { fields: {} };
+
+    // Extract gist (supports multiline YAML folding)
     const gistBlockRegex = new RegExp(`${FIELD_NAMES.GIST}:\\s*>\\s*\\n([\\s\\S]*?)(?=\\n[a-zA-Z_]+:|$)`);
     const gistBlockMatch = frontmatter.match(gistBlockRegex);
     if (gistBlockMatch) {
@@ -340,27 +341,39 @@ export class Indexer {
       }
     }
 
-    const fieldMappings: Array<[string, string]> = [
-      ['type', FIELD_NAMES.TYPE],
-      ['status', FIELD_NAMES.STATUS],
-      ['area', FIELD_NAMES.AREA],
-    ];
+    // Dynamically extract all elysium_* fields
+    const elysiumFieldRegex = /^(elysium_\w+):\s*(.*)$/gm;
+    let fieldMatch: RegExpExecArray | null;
 
-    for (const [key, fieldName] of fieldMappings) {
-      const fieldRegex = new RegExp(`${fieldName}:\\s*["']?([^"'\\n\\[\\]]+)["']?`);
-      const fieldMatch = frontmatter.match(fieldRegex);
-      if (fieldMatch) {
-        result.fields[key] = fieldMatch[1].trim();
+    while ((fieldMatch = elysiumFieldRegex.exec(frontmatter)) !== null) {
+      const fullKey = fieldMatch[1];
+      const valueStr = fieldMatch[2].trim();
+
+      // Remove elysium_ prefix for cleaner key names
+      const key = fullKey.replace(/^elysium_/, '');
+
+      // Skip gist (handled separately above)
+      if (key === 'gist') continue;
+
+      // Parse value: list [...] or string
+      const listMatch = valueStr.match(/^\[([^\]]*)\]$/);
+      if (listMatch) {
+        // List value
+        const items = listMatch[1]
+          .split(',')
+          .map(s => s.trim().replace(/^["']|["']$/g, ''))
+          .filter(s => s.length > 0);
+        result.fields[key] = items;
+
+        // Also populate tags for backward compatibility
+        if (key === 'tags') {
+          result.tags = items;
+        }
+      } else {
+        // String value
+        const cleaned = valueStr.replace(/^["']|["']$/g, '');
+        result.fields[key] = cleaned;
       }
-    }
-
-    const tagsRegex = new RegExp(`${FIELD_NAMES.TAGS}:\\s*\\[([^\\]]*)\\]`);
-    const tagsMatch = frontmatter.match(tagsRegex);
-    if (tagsMatch) {
-      result.tags = tagsMatch[1]
-        .split(',')
-        .map(t => t.trim().replace(/["']/g, ''))
-        .filter(t => t.length > 0);
     }
 
     return result;

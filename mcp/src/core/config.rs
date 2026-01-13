@@ -17,7 +17,7 @@ use std::path::{Path, PathBuf};
 pub const PLUGIN_CONFIG_PATH: &str = ".obsidian/plugins/elysium/config.json";
 /// Legacy config path (backward compatibility)
 pub const LEGACY_CONFIG_FILE: &str = ".elysium.json";
-pub const CONFIG_VERSION: u32 = 1;
+pub const CONFIG_VERSION: u32 = 4;
 
 /// Plugin data directory (unified location for all MCP data)
 pub const PLUGIN_DATA_DIR: &str = ".obsidian/plugins/elysium/data";

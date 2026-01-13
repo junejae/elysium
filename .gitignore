@@ -16,3 +16,6 @@ mcp/data/
 .idea/
 .vscode/
 *.swp
+
+# Claude Code temp files
+tmpclaude-*

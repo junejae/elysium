@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.5.0] - 2026-01-16
+
+### Added
+- **Hybrid Search**: BM25 + Semantic search with RRF (Reciprocal Rank Fusion)
+  - New `search_mode` parameter for `vault_search`: `"hybrid"` (default), `"semantic"`, `"keyword"`
+  - BM25 index using tantivy library for keyword matching
+  - RRF algorithm combines BM25 and semantic results with configurable weights
+  - Field boosting: title (3.0x), gist (2.0x), tags (1.5x)
+  - Lazy BM25 index building on first hybrid/keyword search
+
+### Changed
+- `vault_search` now uses HybridSearchEngine by default (backward compatible)
+
 ## [2.4.1] - 2026-01-13
 
 ### Fixed

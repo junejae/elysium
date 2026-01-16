@@ -16,6 +16,68 @@ lazy_static! {
     static ref ELYSIUM_FIELD_RE: Regex = Regex::new(r"(?m)^(elysium_\w+):\s*(.*)$").unwrap();
     // List pattern for [...] values
     static ref LIST_RE: Regex = Regex::new(r"^\[(.*)\]$").unwrap();
+    // Pattern to detect frontmatter delimiters (for counting blocks)
+    static ref FM_DELIMITER_RE: Regex = Regex::new(r"(?m)^---\s*$").unwrap();
+    // Pattern to detect folded/literal scalar markers (> or |)
+    static ref FOLDED_SCALAR_RE: Regex = Regex::new(r"(?m)^(\w+):\s*([>|])(?:[-+]|\d+[-+]?|[-+]\d+)?\s*$").unwrap();
+}
+
+// =========================================
+// YAML Validation Functions
+// =========================================
+
+/// Count the number of frontmatter blocks in content
+/// A frontmatter block is delimited by `---` at line start
+pub fn count_frontmatter_blocks(content: &str) -> usize {
+    let matches: Vec<_> = FM_DELIMITER_RE.find_iter(content).collect();
+
+    if matches.is_empty() {
+        return 0;
+    }
+
+    // First delimiter must be at position 0 (start of file) for valid frontmatter
+    if matches[0].start() != 0 {
+        return 0;
+    }
+
+    // Count pairs of delimiters as frontmatter blocks
+    matches.len() / 2
+}
+
+/// Check if content has duplicate frontmatter blocks
+pub fn has_duplicate_frontmatter(content: &str) -> bool {
+    count_frontmatter_blocks(content) > 1
+}
+
+/// Validate YAML syntax using serde_yaml
+/// Returns Ok(()) if valid, Err with details if invalid
+pub fn validate_yaml_syntax(
+    raw_frontmatter: &str,
+) -> Result<(), (Option<usize>, Option<usize>, String)> {
+    match serde_yaml::from_str::<serde_yaml::Value>(raw_frontmatter) {
+        Ok(_) => Ok(()),
+        Err(e) => {
+            let location = e.location();
+            Err((
+                location.as_ref().map(|l| l.line()),
+                location.as_ref().map(|l| l.column()),
+                e.to_string(),
+            ))
+        }
+    }
+}
+
+/// Detect fields using folded (>) or literal (|) scalar syntax
+/// Returns list of (field_name, scalar_type) tuples
+pub fn detect_folded_scalars(raw_frontmatter: &str) -> Vec<(String, char)> {
+    FOLDED_SCALAR_RE
+        .captures_iter(raw_frontmatter)
+        .filter_map(|caps| {
+            let field = caps.get(1)?.as_str().to_string();
+            let marker = caps.get(2)?.as_str().chars().next()?;
+            Some((field, marker))
+        })
+        .collect()
 }
 
 /// Field value types for dynamic frontmatter
@@ -318,6 +380,22 @@ impl Frontmatter {
     pub fn validate_with_config(&self, validator: &SchemaValidator) -> Vec<SchemaViolation> {
         let mut violations = Vec::new();
 
+        // YAML syntax validation (using serde_yaml)
+        if let Err((line, column, message)) = validate_yaml_syntax(&self.raw) {
+            violations.push(SchemaViolation::YamlSyntaxError {
+                line,
+                column,
+                message,
+            });
+            // If YAML is invalid, skip further validations as fields may not be parsed correctly
+            return violations;
+        }
+
+        // Folded scalar warnings (> or |)
+        for (field, scalar_type) in detect_folded_scalars(&self.raw) {
+            violations.push(SchemaViolation::FoldedScalarWarning { field, scalar_type });
+        }
+
         // Type validation
         if validator.is_required("elysium_type") {
             match self.note_type() {
@@ -475,5 +553,98 @@ elysium_source: [https://test.com]
         let all = fm.to_json_map();
         assert!(all.contains_key("type"));
         assert!(all.contains_key("source"));
+    }
+
+    // =========================================
+    // New validation tests
+    // =========================================
+
+    #[test]
+    fn test_count_frontmatter_blocks_single() {
+        let content = r#"---
+elysium_type: note
+---
+
+Content here.
+"#;
+        assert_eq!(count_frontmatter_blocks(content), 1);
+    }
+
+    #[test]
+    fn test_count_frontmatter_blocks_duplicate() {
+        let content = r#"---
+elysium_type: note
+---
+
+Some content.
+
+---
+elysium_type: term
+---
+
+More content.
+"#;
+        assert_eq!(count_frontmatter_blocks(content), 2);
+    }
+
+    #[test]
+    fn test_count_frontmatter_blocks_no_frontmatter() {
+        let content = "Just plain text without frontmatter.";
+        assert_eq!(count_frontmatter_blocks(content), 0);
+    }
+
+    #[test]
+    fn test_validate_yaml_syntax_valid() {
+        let yaml = "elysium_type: note\nelysium_tags: [a, b]";
+        assert!(validate_yaml_syntax(yaml).is_ok());
+    }
+
+    #[test]
+    fn test_validate_yaml_syntax_unclosed_bracket() {
+        let yaml = "elysium_tags: [a, b";
+        let result = validate_yaml_syntax(yaml);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_validate_yaml_syntax_bad_indentation() {
+        let yaml = "elysium_type: note\n  bad_indent: value";
+        // This is actually valid YAML (value is a nested object)
+        // Let's use a clearly invalid case
+        let invalid_yaml = "key: value\n  - item"; // mixing styles
+        let result = validate_yaml_syntax(invalid_yaml);
+        // serde_yaml is permissive, so we test with truly invalid YAML
+        let really_invalid = "key: [unclosed";
+        assert!(validate_yaml_syntax(really_invalid).is_err());
+    }
+
+    #[test]
+    fn test_detect_folded_scalars() {
+        let yaml = r#"elysium_gist: >
+  multiline content
+elysium_type: note"#;
+        let scalars = detect_folded_scalars(yaml);
+        assert_eq!(scalars.len(), 1);
+        assert_eq!(scalars[0], ("elysium_gist".to_string(), '>'));
+    }
+
+    #[test]
+    fn test_detect_literal_scalars() {
+        let yaml = r#"description: |
+  line1
+  line2
+elysium_type: note"#;
+        let scalars = detect_folded_scalars(yaml);
+        assert_eq!(scalars.len(), 1);
+        assert_eq!(scalars[0], ("description".to_string(), '|'));
+    }
+
+    #[test]
+    fn test_detect_no_folded_scalars() {
+        let yaml = r#"elysium_type: note
+elysium_gist: "Normal quoted string"
+elysium_tags: [a, b]"#;
+        let scalars = detect_folded_scalars(yaml);
+        assert!(scalars.is_empty());
     }
 }

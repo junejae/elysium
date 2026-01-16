@@ -1,6 +1,6 @@
 [package]
 name = "elysium-mcp"
-version = "2.4.1"
+version = "2.5.0"
 edition = "2021"
 description = "MCP server for Obsidian-based Second Brain with AI-powered semantic search"
 authors = ["junejae"]
@@ -50,6 +50,9 @@ tokio = { version = "1.35", features = ["rt-multi-thread", "macros", "sync", "io
 # SQLite for vector storage and FTS
 rusqlite = { version = "0.32", features = ["bundled"] }
 
+# Full-text search (BM25)
+tantivy = "0.22"
+
 # Model2Vec for semantic tag matching
 model2vec = "0.2"
 
@@ -68,6 +71,9 @@ schemars = { version = "1.0", optional = true }
 default = ["mcp"]
 watch = ["notify"]
 mcp = ["tokio", "rmcp", "schemars"]
+
+[dev-dependencies]
+tempfile = "3.24"
 
 [profile.release]
 lto = true

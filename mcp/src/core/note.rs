@@ -6,7 +6,7 @@ use anyhow::Result;
 use chrono::{DateTime, Local};
 use walkdir::WalkDir;
 
-use super::frontmatter::Frontmatter;
+use super::frontmatter::{count_frontmatter_blocks, Frontmatter};
 use super::paths::VaultPaths;
 use super::schema::{SchemaValidator, SchemaViolation};
 use super::wikilink::extract_wikilinks;
@@ -46,17 +46,37 @@ impl Note {
     }
 
     pub fn validate_schema(&self) -> Vec<SchemaViolation> {
-        match &self.frontmatter {
-            Some(fm) => fm.validate(),
-            None => vec![SchemaViolation::MissingFrontmatter],
+        let mut violations = Vec::new();
+
+        // Check for duplicate frontmatter blocks
+        let block_count = count_frontmatter_blocks(&self.content);
+        if block_count > 1 {
+            violations.push(SchemaViolation::DuplicateFrontmatter(block_count));
         }
+
+        match &self.frontmatter {
+            Some(fm) => violations.extend(fm.validate()),
+            None => violations.push(SchemaViolation::MissingFrontmatter),
+        }
+
+        violations
     }
 
     pub fn validate_schema_with_config(&self, validator: &SchemaValidator) -> Vec<SchemaViolation> {
-        match &self.frontmatter {
-            Some(fm) => fm.validate_with_config(validator),
-            None => vec![SchemaViolation::MissingFrontmatter],
+        let mut violations = Vec::new();
+
+        // Check for duplicate frontmatter blocks
+        let block_count = count_frontmatter_blocks(&self.content);
+        if block_count > 1 {
+            violations.push(SchemaViolation::DuplicateFrontmatter(block_count));
         }
+
+        match &self.frontmatter {
+            Some(fm) => violations.extend(fm.validate_with_config(validator)),
+            None => violations.push(SchemaViolation::MissingFrontmatter),
+        }
+
+        violations
     }
 
     pub fn wikilinks(&self) -> Vec<String> {

@@ -15,6 +15,7 @@ use crate::core::note::{collect_all_notes, collect_note_names, Note};
 use crate::core::paths::VaultPaths;
 use crate::core::schema::SchemaValidator;
 use crate::search::engine::SearchEngine;
+use crate::search::hybrid::{HybridSearchEngine, SearchMode};
 use crate::search::PluginSearchEngine;
 use crate::tags::keyword::KeywordExtractor;
 use crate::tags::{TagDatabase, TagEmbedder, TagMatcher};
@@ -46,6 +47,10 @@ pub struct SearchParams {
     )]
     #[serde(default)]
     pub fields: Option<String>,
+    /// Search mode: "hybrid" (BM25 + semantic, default), "semantic" (HNSW only), "keyword" (BM25 only)
+    #[schemars(description = "Search mode: 'hybrid' (default), 'semantic', 'keyword'")]
+    #[serde(default)]
+    pub search_mode: Option<String>,
 }
 
 fn default_limit() -> usize {
@@ -349,9 +354,13 @@ struct AuditCheckJson {
     status: String,
     errors: usize,
     #[serde(skip_serializing_if = "Option::is_none")]
+    warnings: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     details: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     error_list: Option<Vec<AuditErrorJson>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    warning_list: Option<Vec<AuditErrorJson>>,
 }
 
 #[derive(Debug, Serialize)]
@@ -469,6 +478,13 @@ impl VaultService {
         })
     }
 
+    /// Get hybrid search engine (BM25 + Semantic)
+    fn get_hybrid_engine(&self) -> Result<HybridSearchEngine, McpError> {
+        HybridSearchEngine::new(&self.vault_path).map_err(|e| {
+            McpError::internal_error(format!("Failed to load hybrid search engine: {}", e), None)
+        })
+    }
+
     /// Legacy: Get self-managed search engine (deprecated, use plugin index instead)
     #[allow(dead_code)]
     fn get_engine(&self) -> Result<SearchEngine, McpError> {
@@ -547,17 +563,25 @@ impl VaultService {
 
 #[tool_router]
 impl VaultService {
-    /// Search notes using semantic similarity
+    /// Search notes using hybrid search (BM25 + semantic)
     #[tool(
-        description = "Search Second Brain Vault using semantic similarity. Returns notes with similar meaning to the query based on gist field embeddings. Supports optional type/area filtering."
+        description = "Search Second Brain Vault using hybrid search (BM25 + semantic). Supports search modes: 'hybrid' (default), 'semantic' (HNSW only), 'keyword' (BM25 only). Returns notes with optional type/area filtering."
     )]
     async fn vault_search(
         &self,
         params: Parameters<SearchParams>,
     ) -> Result<CallToolResult, McpError> {
-        let engine = self.get_plugin_engine()?;
+        let mut engine = self.get_hybrid_engine()?;
         let note_type_filter = &params.0.note_type;
         let area_filter = &params.0.area;
+
+        // Parse search mode (default: Hybrid)
+        let search_mode = params
+            .0
+            .search_mode
+            .as_deref()
+            .map(SearchMode::from_str)
+            .unwrap_or_default();
 
         // If filtering, fetch more results to account for filtered-out items
         let has_filter = note_type_filter.is_some() || area_filter.is_some();
@@ -574,7 +598,7 @@ impl VaultService {
         let fetch_limit = (limit * fetch_multiplier).min(500);
 
         let results = engine
-            .search(&params.0.query, fetch_limit)
+            .search(&params.0.query, fetch_limit, search_mode)
             .map_err(|e| McpError::internal_error(format!("Search failed: {}", e), None))?;
 
         // Build dynamic JSON based on fields parameter
@@ -1589,25 +1613,63 @@ impl VaultService {
 impl VaultService {
     fn check_schema(&self, notes: &[crate::core::note::Note], verbose: bool) -> AuditCheckJson {
         let validator = self.get_schema_validator();
+        let config = &self.get_vault_paths().config.schema;
         let mut errors = Vec::new();
+        let mut warnings = Vec::new();
+
         for note in notes {
             let violations = note.validate_schema_with_config(&validator);
             for violation in violations {
-                errors.push(AuditErrorJson {
+                let entry = AuditErrorJson {
                     note: note.name.clone(),
-                    message: format!("{:?}", violation),
-                });
+                    message: violation.format_with_config(config),
+                };
+
+                if violation.is_warning() {
+                    warnings.push(entry);
+                } else {
+                    errors.push(entry);
+                }
             }
         }
+
+        // Status: pass if no errors (warnings don't fail the check)
+        let status = if errors.is_empty() {
+            if warnings.is_empty() {
+                "pass"
+            } else {
+                "warn"
+            }
+        } else {
+            "fail"
+        };
 
         AuditCheckJson {
             id: "schema".to_string(),
             name: "YAML Schema".to_string(),
-            status: if errors.is_empty() { "pass" } else { "fail" }.to_string(),
+            status: status.to_string(),
             errors: errors.len(),
-            details: None,
+            warnings: if warnings.is_empty() {
+                None
+            } else {
+                Some(warnings.len())
+            },
+            details: if !warnings.is_empty() {
+                Some(format!(
+                    "{} errors, {} warnings",
+                    errors.len(),
+                    warnings.len()
+                ))
+            } else {
+                None
+            },
             error_list: if verbose && !errors.is_empty() {
                 Some(errors)
+            } else {
+                None
+            },
+            warning_list: if verbose && !warnings.is_empty() {
+                Some(warnings)
             } else {
                 None
             },
@@ -1637,12 +1699,14 @@ impl VaultService {
             name: "Wikilinks".to_string(),
             status: if errors.is_empty() { "pass" } else { "fail" }.to_string(),
             errors: errors.len(),
+            warnings: None,
             details: None,
             error_list: if verbose && !errors.is_empty() {
                 Some(errors)
             } else {
                 None
             },
+            warning_list: None,
         }
     }
 
@@ -1670,12 +1734,14 @@ impl VaultService {
             name: "Gist Coverage".to_string(),
             status: if missing == 0 { "pass" } else { "fail" }.to_string(),
             errors: missing,
+            warnings: None,
             details: Some(format!("{}% coverage ({} missing)", coverage, missing)),
             error_list: if verbose && !errors.is_empty() {
                 Some(errors)
             } else {
                 None
             },
+            warning_list: None,
         }
     }
 
@@ -1703,12 +1769,14 @@ impl VaultService {
             name: "Tag Usage".to_string(),
             status: if ratio < 0.3 { "pass" } else { "fail" }.to_string(),
             errors: without_tags,
+            warnings: None,
             details: Some(format!("{:.0}% notes without tags", ratio * 100.0)),
             error_list: if verbose && !errors.is_empty() {
                 Some(errors)
             } else {
                 None
             },
+            warning_list: None,
         }
     }
 
@@ -1750,12 +1818,14 @@ impl VaultService {
             name: "Orphan Notes".to_string(),
             status: if ratio < 0.3 { "pass" } else { "fail" }.to_string(),
             errors: orphans,
+            warnings: None,
             details: Some(format!("{} orphan notes ({:.0}%)", orphans, ratio * 100.0)),
             error_list: if verbose && !errors.is_empty() {
                 Some(errors)
             } else {
                 None
             },
+            warning_list: None,
         }
     }
 
@@ -1797,12 +1867,14 @@ impl VaultService {
             name: "Stale Gists".to_string(),
             status: if errors.is_empty() { "pass" } else { "warn" }.to_string(),
             errors: errors.len(),
+            warnings: None,
             details: Some(format!("{} notes with outdated gists", errors.len())),
             error_list: if verbose && !errors.is_empty() {
                 Some(errors)
             } else {
                 None
             },
+            warning_list: None,
         }
     }
 }

@@ -404,6 +404,11 @@ impl PluginSearchEngine {
         self.notes.get(path)
     }
 
+    /// Iterate over all note records
+    pub fn iter_notes(&self) -> impl Iterator<Item = &NoteRecord> {
+        self.notes.values()
+    }
+
     pub fn note_count(&self) -> usize {
         self.notes.len()
     }

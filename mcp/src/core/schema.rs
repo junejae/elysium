@@ -37,6 +37,13 @@ lazy_static::lazy_static! {
     pub static ref VALID_AREAS: HashSet<&'static str> = default_areas();
 }
 
+/// Severity level for schema violations
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ViolationSeverity {
+    Error,
+    Warning,
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub enum SchemaViolation {
     MissingFrontmatter,
@@ -48,6 +55,35 @@ pub enum SchemaViolation {
     HierarchicalTag(String),
     NonLowercaseTag(String),
     EmptyGist,
+    // New validation types
+    /// Multiple frontmatter blocks detected in file
+    DuplicateFrontmatter(usize),
+    /// YAML syntax error with location info
+    YamlSyntaxError {
+        line: Option<usize>,
+        column: Option<usize>,
+        message: String,
+    },
+    /// Warning: Folded/literal scalar may cause Obsidian issues
+    FoldedScalarWarning {
+        field: String,
+        scalar_type: char,
+    },
+}
+
+impl SchemaViolation {
+    /// Check if this violation is a warning (not a hard error)
+    pub fn is_warning(&self) -> bool {
+        matches!(self, Self::FoldedScalarWarning { .. })
+    }
+
+    /// Get severity level of this violation
+    pub fn severity(&self) -> ViolationSeverity {
+        match self {
+            Self::FoldedScalarWarning { .. } => ViolationSeverity::Warning,
+            _ => ViolationSeverity::Error,
+        }
+    }
 }
 
 impl SchemaViolation {
@@ -73,6 +109,31 @@ impl SchemaViolation {
             Self::HierarchicalTag(t) => format!("Hierarchical tag not allowed: {}", t),
             Self::NonLowercaseTag(t) => format!("Tag must be lowercase: {}", t),
             Self::EmptyGist => "Gist field is empty".to_string(),
+            Self::DuplicateFrontmatter(count) => {
+                format!("Duplicate frontmatter: {} blocks found (expected 1)", count)
+            }
+            Self::YamlSyntaxError {
+                line,
+                column,
+                message,
+            } => match (line, column) {
+                (Some(l), Some(c)) => {
+                    format!("YAML syntax error at line {}, column {}: {}", l, c, message)
+                }
+                (Some(l), None) => format!("YAML syntax error at line {}: {}", l, message),
+                _ => format!("YAML syntax error: {}", message),
+            },
+            Self::FoldedScalarWarning { field, scalar_type } => {
+                let type_name = if *scalar_type == '>' {
+                    "folded"
+                } else {
+                    "literal"
+                };
+                format!(
+                    "[Warning] Field '{}' uses {} scalar ('{}') - may not display correctly in Obsidian",
+                    field, type_name, scalar_type
+                )
+            }
         }
     }
 }
@@ -106,6 +167,24 @@ impl std::fmt::Display for SchemaViolation {
             Self::HierarchicalTag(t) => write!(f, "Hierarchical tag not allowed: {}", t),
             Self::NonLowercaseTag(t) => write!(f, "Tag must be lowercase: {}", t),
             Self::EmptyGist => write!(f, "elysium_gist field is empty"),
+            Self::DuplicateFrontmatter(count) => {
+                write!(f, "Duplicate frontmatter: {} blocks found (expected 1)", count)
+            }
+            Self::YamlSyntaxError { line, column, message } => {
+                match (line, column) {
+                    (Some(l), Some(c)) => write!(f, "YAML syntax error at line {}, column {}: {}", l, c, message),
+                    (Some(l), None) => write!(f, "YAML syntax error at line {}: {}", l, message),
+                    _ => write!(f, "YAML syntax error: {}", message),
+                }
+            }
+            Self::FoldedScalarWarning { field, scalar_type } => {
+                let type_name = if *scalar_type == '>' { "folded" } else { "literal" };
+                write!(
+                    f,
+                    "[Warning] Field '{}' uses {} scalar ('{}') - may not display correctly in Obsidian",
+                    field, type_name, scalar_type
+                )
+            }
         }
     }
 }

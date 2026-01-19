@@ -6,11 +6,10 @@ use rmcp::{
     model::{CallToolResult, Content, ServerCapabilities, ServerInfo},
     tool, tool_router, ErrorData as McpError, ServerHandler, ServiceExt,
 };
-use schemars::JsonSchema;
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
+use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 
-use crate::core::frontmatter::{DEFAULT_FIELDS, STANDARD_FIELDS};
 use crate::core::note::{collect_all_notes, collect_note_names, Note};
 use crate::core::paths::VaultPaths;
 use crate::core::schema::SchemaValidator;
@@ -19,387 +18,14 @@ use crate::search::hybrid::{HybridSearchEngine, SearchMode};
 use crate::search::PluginSearchEngine;
 use crate::tags::keyword::KeywordExtractor;
 use crate::tags::{TagDatabase, TagEmbedder, TagMatcher};
-use std::collections::{HashMap, HashSet};
 
-/// Parameters for vault_search tool
-#[derive(Debug, Deserialize, JsonSchema)]
-pub struct SearchParams {
-    /// Natural language search query (e.g., "GPU memory sharing methods")
-    #[schemars(description = "Natural language search query")]
-    pub query: String,
-    /// Maximum number of results to return (default: 5)
-    #[schemars(description = "Maximum number of results (default: 5)")]
-    #[serde(default = "default_limit")]
-    pub limit: usize,
-    /// Filter by note type (note, term, project, log, lesson)
-    #[schemars(description = "Filter by type: note, term, project, log, lesson")]
-    #[serde(default)]
-    pub note_type: Option<String>,
-    /// Filter by area (work, tech, life, career, learning, reference, defense, prosecutor, judge)
-    #[schemars(
-        description = "Filter by area: work, tech, life, career, learning, reference, defense, prosecutor, judge"
-    )]
-    #[serde(default)]
-    pub area: Option<String>,
-    /// Fields to include in output: "default" (title,path,gist), "standard" (+ type,status,area,tags), "all", or comma-separated list
-    #[schemars(
-        description = "Fields to include: 'default', 'standard', 'all', or comma-separated (e.g., 'title,gist,source')"
-    )]
-    #[serde(default)]
-    pub fields: Option<String>,
-    /// Search mode: "hybrid" (BM25 + semantic, default), "semantic" (HNSW only), "keyword" (BM25 only)
-    #[schemars(description = "Search mode: 'hybrid' (default), 'semantic', 'keyword'")]
-    #[serde(default)]
-    pub search_mode: Option<String>,
-}
-
-fn default_limit() -> usize {
-    5
-}
-
-/// Parameters for vault_get_note tool
-#[derive(Debug, Deserialize, JsonSchema)]
-pub struct GetNoteParams {
-    /// Note title (e.g., "GPU 기술 허브")
-    #[schemars(description = "Note title to retrieve")]
-    pub note: String,
-    /// Fields to include in metadata: "default" (title,path,gist), "standard" (+ type,status,area,tags), "all", or comma-separated list
-    #[schemars(
-        description = "Fields to include: 'default', 'standard', 'all', or comma-separated (e.g., 'title,gist,source')"
-    )]
-    #[serde(default)]
-    pub fields: Option<String>,
-}
-
-/// Parameters for vault_list_notes tool
-#[derive(Debug, Deserialize, JsonSchema)]
-pub struct ListNotesParams {
-    /// Filter by note type (note, term, project, log)
-    #[schemars(description = "Filter by type: note, term, project, log")]
-    #[serde(default)]
-    pub note_type: Option<String>,
-    /// Filter by area (work, tech, life, career, learning, reference)
-    #[schemars(description = "Filter by area: work, tech, life, career, learning, reference")]
-    #[serde(default)]
-    pub area: Option<String>,
-    /// Maximum number of results (default: 50)
-    #[schemars(description = "Maximum results (default: 50)")]
-    #[serde(default = "default_list_limit")]
-    pub limit: usize,
-    /// Fields to include in output: "default" (title,path,gist), "standard" (+ type,status,area,tags), "all", or comma-separated list
-    #[schemars(
-        description = "Fields to include: 'default', 'standard', 'all', or comma-separated (e.g., 'title,gist,source')"
-    )]
-    #[serde(default)]
-    pub fields: Option<String>,
-}
-
-fn default_list_limit() -> usize {
-    50
-}
-
-/// Resolve fields parameter to actual field list
-/// Returns (field_list, is_all)
-fn resolve_fields(fields_param: &Option<String>) -> (Vec<&'static str>, bool) {
-    match fields_param.as_deref() {
-        None | Some("default") => (DEFAULT_FIELDS.to_vec(), false),
-        Some("standard") => (STANDARD_FIELDS.to_vec(), false),
-        Some("all") => (vec![], true), // empty means all fields
-        Some(custom) => {
-            let fields: Vec<&str> = custom.split(',').map(|s| s.trim()).collect();
-            // Convert to static strings by matching known fields
-            let known_fields = [
-                "title",
-                "path",
-                "type",
-                "status",
-                "area",
-                "gist",
-                "tags",
-                "source",
-                "gist_source",
-                "gist_date",
-            ];
-            let filtered: Vec<&'static str> = fields
-                .iter()
-                .filter_map(|f| known_fields.iter().find(|&&k| k == *f).copied())
-                .collect();
-            (filtered, false)
-        }
-    }
-}
-
-/// Build dynamic JSON output for a note based on requested fields
-fn build_note_json(
-    note: &Note,
-    fields_param: &Option<String>,
-) -> HashMap<String, serde_json::Value> {
-    let (requested_fields, is_all) = resolve_fields(fields_param);
-
-    let mut result: HashMap<String, serde_json::Value> = HashMap::new();
-
-    // Always include title and path
-    result.insert(
-        "title".to_string(),
-        serde_json::Value::String(note.name.clone()),
-    );
-    result.insert(
-        "path".to_string(),
-        serde_json::Value::String(note.path.display().to_string()),
-    );
-
-    if is_all {
-        // Include all frontmatter fields
-        if let Some(fm) = &note.frontmatter {
-            for (key, value) in fm.to_json_map() {
-                result.insert(key, value);
-            }
-        }
-    } else {
-        // Include only requested fields from frontmatter
-        if let Some(fm) = &note.frontmatter {
-            let fm_fields = fm.to_json_map();
-            for field in &requested_fields {
-                if *field == "title" || *field == "path" {
-                    continue; // Already added
-                }
-                if let Some(value) = fm_fields.get(*field) {
-                    result.insert(field.to_string(), value.clone());
-                }
-            }
-        }
-    }
-
-    result
-}
-
-#[derive(Debug, Deserialize, JsonSchema)]
-pub struct RelatedParams {
-    #[schemars(description = "Note title to find related notes for")]
-    pub note: String,
-    #[schemars(description = "Maximum number of results (default: 10)")]
-    #[serde(default = "default_related_limit")]
-    pub limit: usize,
-    #[schemars(description = "Boost notes with same type as source")]
-    #[serde(default)]
-    pub boost_type: bool,
-    #[schemars(description = "Boost notes with same area as source")]
-    #[serde(default)]
-    pub boost_area: bool,
-}
-
-fn default_related_limit() -> usize {
-    10
-}
-
-/// Parameters for vault_audit tool
-#[derive(Debug, Deserialize, JsonSchema)]
-pub struct AuditParams {
-    /// Quick mode: schema + wikilinks only
-    #[schemars(description = "Quick mode: schema + wikilinks only")]
-    #[serde(default)]
-    pub quick: bool,
-
-    /// Include detailed error messages
-    #[schemars(description = "Include detailed error list per check")]
-    #[serde(default)]
-    pub verbose: bool,
-}
-
-/// Parameters for unified vault_save tool
-#[derive(Debug, Deserialize, JsonSchema)]
-pub struct SaveParams {
-    /// Note title (used as filename for create, or to find existing note)
-    #[schemars(description = "Note title (filename for create, or search key for update/append)")]
-    pub title: String,
-
-    /// Note content (markdown body, or memo for inbox strategy)
-    #[schemars(description = "Note content (markdown body)")]
-    pub content: String,
-
-    /// Save strategy: create, update, append, inbox, smart
-    #[schemars(
-        description = "Save strategy: 'create' (new note), 'update' (overwrite existing), 'append' (add to existing), 'inbox' (quick capture), 'smart' (auto-detect duplicates)"
-    )]
-    #[serde(default = "default_strategy")]
-    pub strategy: String,
-
-    /// Note type: note, term, project, log
-    #[schemars(description = "Note type: note, term, project, log")]
-    #[serde(default)]
-    pub note_type: Option<String>,
-
-    /// Note area: work, tech, life, career, learning, reference
-    #[schemars(description = "Note area: work, tech, life, career, learning, reference")]
-    #[serde(default)]
-    pub area: Option<String>,
-
-    /// Tags (comma-separated)
-    #[schemars(description = "Tags (comma-separated, e.g., 'gpu, cuda, nvidia')")]
-    #[serde(default)]
-    pub tags: Option<String>,
-
-    /// Gist summary (2-3 sentences for semantic search)
-    #[schemars(description = "Gist summary (2-3 sentences for semantic search)")]
-    #[serde(default)]
-    pub gist: Option<String>,
-
-    /// Source URLs (for web research notes, comma-separated)
-    #[schemars(
-        description = "Source URLs (comma-separated, e.g., 'https://a.com, https://b.com')"
-    )]
-    #[serde(default)]
-    pub source: Option<String>,
-
-    /// Similarity threshold for smart strategy (default: 0.7)
-    #[schemars(description = "Similarity threshold for smart strategy (0.0-1.0, default: 0.7)")]
-    #[serde(default = "default_similarity_threshold")]
-    pub similarity_threshold: Option<f32>,
-
-    /// Auto-generate tags based on gist/title (default: true)
-    #[schemars(description = "Auto-generate tags using semantic matching (default: true)")]
-    #[serde(default = "default_auto_tag")]
-    pub auto_tag: bool,
-
-    /// Maximum number of auto-generated tags (default: 5)
-    #[schemars(description = "Maximum number of auto-generated tags (default: 5)")]
-    #[serde(default = "default_tag_limit")]
-    pub tag_limit: usize,
-
-    /// Enable tag discovery from content keywords (not just DB match)
-    #[schemars(description = "Enable tag discovery from content keywords (default: false)")]
-    #[serde(default)]
-    pub discover: bool,
-}
-
-fn default_auto_tag() -> bool {
-    true
-}
-
-fn default_tag_limit() -> usize {
-    5
-}
-
-fn default_strategy() -> String {
-    "create".to_string()
-}
-
-/// Parameters for vault_tags_suggest tool
-#[derive(Debug, Deserialize, JsonSchema)]
-pub struct TagsSuggestParams {
-    /// Text to analyze for tag suggestions (gist or title)
-    #[schemars(description = "Text to analyze for tag suggestions")]
-    pub text: String,
-
-    /// Maximum number of tag suggestions (default: 5)
-    #[schemars(description = "Maximum number of suggestions (default: 5)")]
-    #[serde(default = "default_tag_limit")]
-    pub limit: usize,
-}
-
-/// Parameters for vault_tags_analyze tool
-#[derive(Debug, Deserialize, JsonSchema)]
-pub struct TagsAnalyzeParams {
-    /// Similarity threshold for merge suggestions (default: 0.7)
-    #[schemars(description = "Similarity threshold for merge suggestions (0.0-1.0, default: 0.7)")]
-    #[serde(default = "default_merge_threshold")]
-    pub threshold: f32,
-}
-
-/// Parameters for vault_suggest_tags (advanced search based)
-#[derive(Debug, Deserialize, JsonSchema)]
-pub struct SuggestTagsParams {
-    /// Note title or path to analyze
-    #[schemars(description = "Note title or path to find similar notes and suggest tags from")]
-    pub note: String,
-
-    /// Maximum number of tag suggestions (default: 5)
-    #[schemars(description = "Maximum number of tag suggestions (default: 5)")]
-    #[serde(default = "default_tag_limit")]
-    pub limit: usize,
-
-    /// Number of similar notes to analyze (default: 10)
-    #[schemars(description = "Number of similar notes to analyze for tags (default: 10)")]
-    #[serde(default = "default_similar_notes")]
-    pub similar_count: usize,
-
-    /// Minimum frequency threshold (default: 2)
-    #[schemars(
-        description = "Minimum number of occurrences for a tag to be suggested (default: 2)"
-    )]
-    #[serde(default = "default_min_frequency")]
-    pub min_frequency: usize,
-}
-
-fn default_similar_notes() -> usize {
-    10
-}
-
-fn default_min_frequency() -> usize {
-    2
-}
-
-fn default_merge_threshold() -> f32 {
-    0.7
-}
-
-fn default_similarity_threshold() -> Option<f32> {
-    Some(0.7)
-}
-
-#[derive(Debug, Serialize)]
-struct AuditCheckJson {
-    id: String,
-    name: String,
-    status: String,
-    errors: usize,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    warnings: Option<usize>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    details: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    error_list: Option<Vec<AuditErrorJson>>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    warning_list: Option<Vec<AuditErrorJson>>,
-}
-
-#[derive(Debug, Serialize)]
-struct AuditErrorJson {
-    note: String,
-    message: String,
-}
-
-#[derive(Debug, Serialize)]
-struct AuditResultJson {
-    timestamp: String,
-    total_checks: usize,
-    passed: usize,
-    failed: usize,
-    checks: Vec<AuditCheckJson>,
-}
-
-/// Search result for JSON output
-#[derive(Debug, Serialize)]
-struct SearchResultJson {
-    title: String,
-    path: String,
-    gist: Option<String>,
-    note_type: Option<String>,
-    area: Option<String>,
-    score: f32,
-}
-
-/// Note info for JSON output
-#[derive(Debug, Serialize)]
-struct NoteInfoJson {
-    title: String,
-    path: String,
-    note_type: Option<String>,
-    status: Option<String>,
-    area: Option<String>,
-    gist: Option<String>,
-    tags: Vec<String>,
-}
+use super::audit;
+use super::helpers::{build_note_json, resolve_fields};
+use super::params::{
+    AuditParams, GetNoteParams, ListNotesParams, RelatedParams, SaveParams, SearchParams,
+    SuggestTagsParams, TagsAnalyzeParams, TagsSuggestParams,
+};
+use super::types::{AuditResultJson, SearchResultJson};
 
 /// Vault MCP Service
 #[derive(Clone)]
@@ -885,31 +511,34 @@ impl VaultService {
         let quick = params.0.quick;
         let verbose = params.0.verbose;
 
+        let validator = self.get_schema_validator();
+        let schema_config = &vault_paths.config.schema;
+
         let mut checks = Vec::new();
 
         // Schema check
-        let schema_check = self.check_schema(&notes, verbose);
+        let schema_check = audit::check_schema(&notes, &validator, schema_config, verbose);
         checks.push(schema_check);
 
         // Wikilinks check
-        let wikilinks_check = self.check_wikilinks(&notes, &note_names, verbose);
+        let wikilinks_check = audit::check_wikilinks(&notes, &note_names, verbose);
         checks.push(wikilinks_check);
 
         if !quick {
             // Gist coverage check
-            let gist_check = self.check_gist(&notes, verbose);
+            let gist_check = audit::check_gist(&notes, verbose);
             checks.push(gist_check);
 
             // Tag usage check
-            let tags_check = self.check_tags(&notes, verbose);
+            let tags_check = audit::check_tags(&notes, verbose);
             checks.push(tags_check);
 
             // Orphan notes check
-            let orphans_check = self.check_orphans(&notes, &note_names, verbose);
+            let orphans_check = audit::check_orphans(&notes, &note_names, verbose);
             checks.push(orphans_check);
 
             // Stale gists check
-            let stale_gists_check = self.check_stale_gists(&notes, verbose);
+            let stale_gists_check = audit::check_stale_gists(&notes, verbose);
             checks.push(stale_gists_check);
         }
 
@@ -1036,8 +665,9 @@ impl VaultService {
     }
 }
 
+// Save strategy implementations
 impl VaultService {
-    fn get_target_folder(&self, note_type: Option<&str>) -> PathBuf {
+    fn get_target_folder(&self, _note_type: Option<&str>) -> PathBuf {
         let vault_paths = self.get_vault_paths();
         let folders = &vault_paths.config.folders;
 
@@ -1606,276 +1236,6 @@ impl VaultService {
         }
 
         tags
-    }
-}
-
-// Audit helper methods
-impl VaultService {
-    fn check_schema(&self, notes: &[crate::core::note::Note], verbose: bool) -> AuditCheckJson {
-        let validator = self.get_schema_validator();
-        let config = &self.get_vault_paths().config.schema;
-        let mut errors = Vec::new();
-        let mut warnings = Vec::new();
-
-        for note in notes {
-            let violations = note.validate_schema_with_config(&validator);
-            for violation in violations {
-                let entry = AuditErrorJson {
-                    note: note.name.clone(),
-                    message: violation.format_with_config(config),
-                };
-
-                if violation.is_warning() {
-                    warnings.push(entry);
-                } else {
-                    errors.push(entry);
-                }
-            }
-        }
-
-        // Status: pass if no errors (warnings don't fail the check)
-        let status = if errors.is_empty() {
-            if warnings.is_empty() {
-                "pass"
-            } else {
-                "warn"
-            }
-        } else {
-            "fail"
-        };
-
-        AuditCheckJson {
-            id: "schema".to_string(),
-            name: "YAML Schema".to_string(),
-            status: status.to_string(),
-            errors: errors.len(),
-            warnings: if warnings.is_empty() {
-                None
-            } else {
-                Some(warnings.len())
-            },
-            details: if !warnings.is_empty() {
-                Some(format!(
-                    "{} errors, {} warnings",
-                    errors.len(),
-                    warnings.len()
-                ))
-            } else {
-                None
-            },
-            error_list: if verbose && !errors.is_empty() {
-                Some(errors)
-            } else {
-                None
-            },
-            warning_list: if verbose && !warnings.is_empty() {
-                Some(warnings)
-            } else {
-                None
-            },
-        }
-    }
-
-    fn check_wikilinks(
-        &self,
-        notes: &[crate::core::note::Note],
-        note_names: &HashSet<String>,
-        verbose: bool,
-    ) -> AuditCheckJson {
-        let mut errors = Vec::new();
-        for note in notes {
-            for link in note.wikilinks() {
-                if !note_names.contains(&link) {
-                    errors.push(AuditErrorJson {
-                        note: note.name.clone(),
-                        message: format!("Broken link: [[{}]]", link),
-                    });
-                }
-            }
-        }
-
-        AuditCheckJson {
-            id: "wikilinks".to_string(),
-            name: "Wikilinks".to_string(),
-            status: if errors.is_empty() { "pass" } else { "fail" }.to_string(),
-            errors: errors.len(),
-            warnings: None,
-            details: None,
-            error_list: if verbose && !errors.is_empty() {
-                Some(errors)
-            } else {
-                None
-            },
-            warning_list: None,
-        }
-    }
-
-    fn check_gist(&self, notes: &[crate::core::note::Note], verbose: bool) -> AuditCheckJson {
-        let mut errors = Vec::new();
-        for note in notes {
-            if note.gist().is_none() {
-                errors.push(AuditErrorJson {
-                    note: note.name.clone(),
-                    message: "Missing gist".to_string(),
-                });
-            }
-        }
-
-        let total = notes.len();
-        let missing = errors.len();
-        let coverage = if total > 0 {
-            ((total - missing) as f64 / total as f64 * 100.0).round() as usize
-        } else {
-            100
-        };
-
-        AuditCheckJson {
-            id: "gist".to_string(),
-            name: "Gist Coverage".to_string(),
-            status: if missing == 0 { "pass" } else { "fail" }.to_string(),
-            errors: missing,
-            warnings: None,
-            details: Some(format!("{}% coverage ({} missing)", coverage, missing)),
-            error_list: if verbose && !errors.is_empty() {
-                Some(errors)
-            } else {
-                None
-            },
-            warning_list: None,
-        }
-    }
-
-    fn check_tags(&self, notes: &[crate::core::note::Note], verbose: bool) -> AuditCheckJson {
-        let mut errors = Vec::new();
-        for note in notes {
-            if note.tags().is_empty() {
-                errors.push(AuditErrorJson {
-                    note: note.name.clone(),
-                    message: "No tags".to_string(),
-                });
-            }
-        }
-
-        let total = notes.len();
-        let without_tags = errors.len();
-        let ratio = if total > 0 {
-            without_tags as f64 / total as f64
-        } else {
-            0.0
-        };
-
-        AuditCheckJson {
-            id: "tags".to_string(),
-            name: "Tag Usage".to_string(),
-            status: if ratio < 0.3 { "pass" } else { "fail" }.to_string(),
-            errors: without_tags,
-            warnings: None,
-            details: Some(format!("{:.0}% notes without tags", ratio * 100.0)),
-            error_list: if verbose && !errors.is_empty() {
-                Some(errors)
-            } else {
-                None
-            },
-            warning_list: None,
-        }
-    }
-
-    fn check_orphans(
-        &self,
-        notes: &[crate::core::note::Note],
-        note_names: &HashSet<String>,
-        verbose: bool,
-    ) -> AuditCheckJson {
-        let mut linked: HashSet<String> = HashSet::new();
-        for note in notes {
-            for link in note.wikilinks() {
-                if note_names.contains(&link) {
-                    linked.insert(link);
-                }
-            }
-        }
-
-        let mut errors = Vec::new();
-        for name in note_names {
-            if !linked.contains(name) {
-                errors.push(AuditErrorJson {
-                    note: name.clone(),
-                    message: "Orphan note (no incoming links)".to_string(),
-                });
-            }
-        }
-
-        let total = notes.len();
-        let orphans = errors.len();
-        let ratio = if total > 0 {
-            orphans as f64 / total as f64
-        } else {
-            0.0
-        };
-
-        AuditCheckJson {
-            id: "orphans".to_string(),
-            name: "Orphan Notes".to_string(),
-            status: if ratio < 0.3 { "pass" } else { "fail" }.to_string(),
-            errors: orphans,
-            warnings: None,
-            details: Some(format!("{} orphan notes ({:.0}%)", orphans, ratio * 100.0)),
-            error_list: if verbose && !errors.is_empty() {
-                Some(errors)
-            } else {
-                None
-            },
-            warning_list: None,
-        }
-    }
-
-    fn check_stale_gists(
-        &self,
-        notes: &[crate::core::note::Note],
-        verbose: bool,
-    ) -> AuditCheckJson {
-        let mut errors = Vec::new();
-        let gist_date_re =
-            regex::Regex::new(r"(?m)^elysium_gist_date:\s*(\d{4}-\d{2}-\d{2})").unwrap();
-
-        for note in notes {
-            let gist_date = note
-                .frontmatter
-                .as_ref()
-                .and_then(|fm| gist_date_re.captures(&fm.raw))
-                .and_then(|caps| caps.get(1))
-                .and_then(|m| chrono::NaiveDate::parse_from_str(m.as_str(), "%Y-%m-%d").ok());
-
-            if let Some(gist_date) = gist_date {
-                if let Ok(metadata) = std::fs::metadata(&note.path) {
-                    if let Ok(modified) = metadata.modified() {
-                        let modified_date =
-                            chrono::DateTime::<chrono::Local>::from(modified).date_naive();
-                        if gist_date < modified_date {
-                            errors.push(AuditErrorJson {
-                                note: note.name.clone(),
-                                message: format!("Stale gist: {} < {}", gist_date, modified_date),
-                            });
-                        }
-                    }
-                }
-            }
-        }
-
-        AuditCheckJson {
-            id: "stale_gists".to_string(),
-            name: "Stale Gists".to_string(),
-            status: if errors.is_empty() { "pass" } else { "warn" }.to_string(),
-            errors: errors.len(),
-            warnings: None,
-            details: Some(format!("{} notes with outdated gists", errors.len())),
-            error_list: if verbose && !errors.is_empty() {
-                Some(errors)
-            } else {
-                None
-            },
-            warning_list: None,
-        }
     }
 }
 

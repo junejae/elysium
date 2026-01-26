@@ -6,7 +6,7 @@
 //! - meta.json: Index metadata (embedding mode, dimension, timestamp)
 
 use anyhow::{Context, Result};
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize};
 use std::collections::{HashMap, HashSet};
 use std::path::Path;
 
@@ -254,10 +254,47 @@ pub struct NoteRecord {
     pub gist: String,
     pub mtime: u64,
     pub indexed: bool,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "deserialize_fields")]
     pub fields: HashMap<String, String>,
     #[serde(default)]
     pub tags: Option<Vec<String>>,
+}
+
+fn deserialize_fields<'de, D>(deserializer: D) -> Result<HashMap<String, String>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    use serde_json::Value;
+
+    let raw = HashMap::<String, Value>::deserialize(deserializer)?;
+    let mut fields = HashMap::new();
+
+    for (key, value) in raw {
+        match value {
+            Value::String(s) => {
+                fields.insert(key, s);
+            }
+            Value::Number(n) => {
+                fields.insert(key, n.to_string());
+            }
+            Value::Bool(b) => {
+                fields.insert(key, b.to_string());
+            }
+            Value::Array(items) => {
+                let joined = items
+                    .iter()
+                    .filter_map(|item| item.as_str())
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                if !joined.is_empty() {
+                    fields.insert(key, joined);
+                }
+            }
+            _ => {}
+        }
+    }
+
+    Ok(fields)
 }
 
 // ============================================================================

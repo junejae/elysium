@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [2.5.1] - 2026-01-26
+## [2.5.2] - 2026-01-26
 
 ### Fixed
 - **Hybrid Search**: tolerate non-string plugin index fields (e.g., tags arrays) to prevent hybrid engine load failures

@@ -1,6 +1,6 @@
 {
   "name": "elysium-obsidian-plugin",
-  "version": "2.5.1",
+  "version": "2.5.2",
   "description": "AI-powered semantic search for Obsidian",
   "main": "main.js",
   "scripts": {

@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.5.3] - 2026-01-29
+
+### Added
+- Refactor safety net docs, fixture guidelines, and plugin index contract schemas
+- Golden search baselines + fixture vault for MCP smoke testing
+- Plugin index export smoke validator (`plugin/scripts/smoke-index-export.ts`)
+
+### Changed
+- Plugin index export now validates metadata/notes before writing index files
+- MCP plugin index loader rejects incompatible index versions
+
 ## [2.5.2] - 2026-01-26
 
 ### Fixed

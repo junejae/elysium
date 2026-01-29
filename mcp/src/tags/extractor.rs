@@ -11,6 +11,7 @@ use super::database::TagDatabase;
 use super::embedder::TagEmbedder;
 
 /// Extract tags from notes and populate the database
+#[allow(dead_code)]
 pub fn extract_tags_from_notes(
     notes: &[Note],
     db: &TagDatabase,
@@ -90,6 +91,7 @@ fn generate_description(tag_name: &str, gists: &[String]) -> String {
 
 /// Result of tag extraction
 #[derive(Debug)]
+#[allow(dead_code)]
 pub struct ExtractResult {
     pub total_tags: usize,
     pub added: usize,

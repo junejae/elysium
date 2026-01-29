@@ -16,7 +16,9 @@ pub struct Note {
     pub name: String,
     pub content: String,
     pub frontmatter: Option<Frontmatter>,
+    #[allow(dead_code)]
     pub modified: DateTime<Local>,
+    #[allow(dead_code)]
     pub created: DateTime<Local>,
 }
 
@@ -45,6 +47,7 @@ impl Note {
         })
     }
 
+    #[allow(dead_code)]
     pub fn validate_schema(&self) -> Vec<SchemaViolation> {
         let mut violations = Vec::new();
 
@@ -94,6 +97,7 @@ impl Note {
         self.frontmatter.as_ref()?.note_type()
     }
 
+    #[allow(dead_code)]
     pub fn status(&self) -> Option<&str> {
         self.frontmatter.as_ref()?.status()
     }
@@ -107,16 +111,19 @@ impl Note {
     }
 
     /// Get source URLs (elysium_source)
+    #[allow(dead_code)]
     pub fn source(&self) -> Option<Vec<String>> {
         self.frontmatter.as_ref()?.source()
     }
 
     /// Get any dynamic field by key (without elysium_ prefix)
+    #[allow(dead_code)]
     pub fn get_field(&self, key: &str) -> Option<&super::frontmatter::FieldValue> {
         self.frontmatter.as_ref()?.get(key)
     }
 
     /// Get all frontmatter fields as JSON map
+    #[allow(dead_code)]
     pub fn fields_to_json(&self) -> std::collections::HashMap<String, serde_json::Value> {
         self.frontmatter
             .as_ref()

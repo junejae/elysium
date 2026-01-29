@@ -177,11 +177,13 @@ impl Bm25Index {
     ///
     /// # Returns
     /// Built BM25 index ready for searching
+    #[allow(dead_code)]
     pub fn build(vault_path: &Path) -> Result<Self> {
         Self::build_with_config(vault_path, Bm25Config::default())
     }
 
     /// Build BM25 index from Obsidian vault with custom configuration
+    #[allow(dead_code)]
     pub fn build_with_config(vault_path: &Path, config: Bm25Config) -> Result<Self> {
         // Read notes from plugin index
         let reader = PluginIndexReader::new(vault_path);

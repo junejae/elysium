@@ -11,11 +11,13 @@ use super::embedder::TagEmbedder;
 /// A tag entry in the database
 #[derive(Debug, Clone)]
 pub struct TagEntry {
+    #[allow(dead_code)]
     pub id: i64,
     pub name: String,
     pub description: String,
     pub embedding: Vec<f32>,
     pub aliases: Vec<String>,
+    #[allow(dead_code)]
     pub usage_count: i64,
 }
 
@@ -174,6 +176,7 @@ impl TagDatabase {
     }
 
     /// Add an alias to a tag
+    #[allow(dead_code)]
     pub fn add_alias(&self, tag_name: &str, alias: &str) -> Result<()> {
         self.conn.execute(
             r#"
@@ -187,6 +190,7 @@ impl TagDatabase {
     }
 
     /// Increment usage count for a tag
+    #[allow(dead_code)]
     pub fn increment_usage(&self, tag_name: &str) -> Result<()> {
         self.conn.execute(
             "UPDATE tags SET usage_count = usage_count + 1, updated_at = CURRENT_TIMESTAMP WHERE name = ?1",
@@ -211,6 +215,7 @@ impl TagDatabase {
     }
 
     /// Find tag by name or alias
+    #[allow(dead_code)]
     pub fn find_tag(&self, name_or_alias: &str) -> Result<Option<TagEntry>> {
         // First try exact name match
         if let Some(tag) = self.get_tag(name_or_alias)? {

@@ -54,6 +54,7 @@ impl EmbeddingModel {
     ///
     /// Note: model_path is ignored (no model file needed)
     /// Kept for API compatibility
+    #[allow(dead_code)]
     pub fn load(_model_path: &Path) -> Result<Self> {
         Ok(Self::new())
     }
@@ -150,6 +151,7 @@ impl EmbeddingModel {
     }
 
     /// Generate embeddings for multiple texts
+    #[allow(dead_code)]
     pub fn embed_batch(&self, texts: &[&str]) -> Result<Vec<Vec<f32>>> {
         texts.iter().map(|t| self.embed(t)).collect()
     }

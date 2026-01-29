@@ -15,6 +15,7 @@ pub struct KeywordExtractor {
     tokenizer: Tokenizer,
     embeddings: Vec<Vec<f32>>,
     embedding_dim: usize,
+    #[allow(dead_code)]
     vocab: HashMap<String, u32>,
 }
 
@@ -41,7 +42,6 @@ impl KeywordExtractor {
             .context("No embeddings tensor found")?;
 
         let shape = tensor.shape();
-        let rows = shape[0];
         let cols = shape[1];
 
         // Convert to f32 vectors

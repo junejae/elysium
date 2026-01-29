@@ -1,0 +1,32 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Elysium Plugin Index Notes (v1)",
+  "type": "array",
+  "items": {
+    "type": "object",
+    "additionalProperties": false,
+    "required": ["path", "gist", "mtime", "indexed", "fields"],
+    "properties": {
+      "path": { "type": "string" },
+      "gist": { "type": "string" },
+      "mtime": { "type": "integer", "minimum": 0 },
+      "indexed": { "type": "boolean" },
+      "fields": {
+        "type": "object",
+        "additionalProperties": {
+          "oneOf": [
+            { "type": "string" },
+            {
+              "type": "array",
+              "items": { "type": "string" }
+            }
+          ]
+        }
+      },
+      "tags": {
+        "type": "array",
+        "items": { "type": "string" }
+      }
+    }
+  }
+}

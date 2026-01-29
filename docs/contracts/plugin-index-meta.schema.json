@@ -1,0 +1,40 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Elysium Plugin Index Meta (v1)",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "embeddingMode",
+    "dimension",
+    "noteCount",
+    "indexSize",
+    "exportedAt",
+    "version"
+  ],
+  "properties": {
+    "embeddingMode": {
+      "type": "string",
+      "enum": ["htp", "model2vec"]
+    },
+    "dimension": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "noteCount": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "indexSize": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "exportedAt": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "version": {
+      "type": "integer",
+      "const": 1
+    }
+  }
+}

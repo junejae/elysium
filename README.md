@@ -272,6 +272,24 @@ npm run build
 npm run dev  # Watch mode
 ```
 
+## Refactor Readiness
+
+- Safety net checklist: `docs/refactor-safety-net.md`
+- Fixtures: `tests/fixtures/vault_small`
+- Contracts: `docs/contracts/` (plugin index contract v1)
+- Fixture content (for golden baselines): alpha (tags: alpha, demo; gist keywords: work note), beta (tag: beta; gist keywords: tech term), gamma (area: learning; gist keywords: learning project)
+
+Smoke tests:
+```bash
+# MCP smoke tests (uses fixtures)
+cd mcp
+cargo test
+
+# Plugin index export validation (run from your vault root)
+cd plugin
+npm run smoke:index-export -- --vault /path/to/your/vault
+```
+
 ## License
 
 MIT

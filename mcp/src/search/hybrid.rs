@@ -175,6 +175,7 @@ impl HybridSearchEngine {
     }
 
     /// Create with custom configuration
+    #[allow(dead_code)]
     pub fn with_config(vault_path: &Path, config: HybridConfig) -> Result<Self> {
         let mut engine = Self::new(vault_path)?;
         engine.config = config;
@@ -182,11 +183,13 @@ impl HybridSearchEngine {
     }
 
     /// Get current configuration
+    #[allow(dead_code)]
     pub fn config(&self) -> &HybridConfig {
         &self.config
     }
 
     /// Update configuration
+    #[allow(dead_code)]
     pub fn set_config(&mut self, config: HybridConfig) {
         self.config = config;
     }
@@ -329,16 +332,19 @@ impl HybridSearchEngine {
     }
 
     /// Get semantic engine reference
+    #[allow(dead_code)]
     pub fn semantic_engine(&self) -> &PluginSearchEngine {
         &self.semantic
     }
 
     /// Check if BM25 index is loaded
+    #[allow(dead_code)]
     pub fn has_bm25_index(&self) -> bool {
         self.bm25.is_some()
     }
 
     /// Get note count
+    #[allow(dead_code)]
     pub fn note_count(&self) -> usize {
         self.semantic.note_count()
     }

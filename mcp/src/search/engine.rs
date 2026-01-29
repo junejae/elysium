@@ -13,6 +13,7 @@ use crate::core::paths::VaultPaths;
 /// Search result with note metadata and similarity score
 #[derive(Debug, Clone)]
 pub struct SearchResult {
+    #[allow(dead_code)]
     pub id: String,
     pub path: String,
     pub title: String,
@@ -22,6 +23,7 @@ pub struct SearchResult {
     pub score: f32,
 }
 
+#[allow(dead_code)]
 #[derive(Debug, Clone, Default)]
 pub struct BoostOptions {
     pub boost_type: bool,
@@ -30,6 +32,7 @@ pub struct BoostOptions {
     pub source_area: Option<String>,
 }
 
+#[allow(dead_code)]
 impl BoostOptions {
     pub fn from_source(
         note_type: Option<&str>,
@@ -65,6 +68,7 @@ impl From<(NoteRecord, f32)> for SearchResult {
 }
 
 /// Indexing statistics
+#[allow(dead_code)]
 #[derive(Debug)]
 pub struct IndexingStats {
     pub indexed: usize,
@@ -77,11 +81,13 @@ pub struct IndexingStats {
 pub struct SearchEngine {
     embedder: Box<dyn Embedder>,
     db: VectorDB,
+    #[allow(dead_code)]
     vault_paths: VaultPaths,
 }
 
 impl SearchEngine {
     /// Create new search engine with default (HTP) embedding
+    #[allow(dead_code)]
     pub fn new(vault_path: &Path, db_path: &Path) -> Result<Self> {
         Self::with_config(vault_path, db_path, SearchConfig::default())
     }
@@ -100,6 +106,7 @@ impl SearchEngine {
     }
 
     /// Create with in-memory database (for testing)
+    #[allow(dead_code)]
     pub fn new_in_memory(vault_path: &Path) -> Result<Self> {
         let vault_paths = VaultPaths::from_root(vault_path.to_path_buf());
         let embedder = create_embedder(&SearchConfig::default())?;
@@ -113,11 +120,13 @@ impl SearchEngine {
     }
 
     /// Get current embedder name
+    #[allow(dead_code)]
     pub fn embedder_name(&self) -> &str {
         self.embedder.name()
     }
 
     /// Get embedding dimension
+    #[allow(dead_code)]
     pub fn embedding_dimension(&self) -> usize {
         self.embedder.dimension()
     }
@@ -128,6 +137,7 @@ impl SearchEngine {
         Ok(results.into_iter().map(SearchResult::from).collect())
     }
 
+    #[allow(dead_code)]
     pub fn search_with_boost(
         &mut self,
         query: &str,
@@ -167,6 +177,7 @@ impl SearchEngine {
     }
 
     /// Index all notes in vault
+    #[allow(dead_code)]
     pub fn index_all(&mut self) -> Result<IndexingStats> {
         let start = std::time::Instant::now();
 
@@ -208,6 +219,7 @@ impl SearchEngine {
     /// Index a single note
     ///
     /// Returns Ok(true) if indexed, Ok(false) if skipped (no gist)
+    #[allow(dead_code)]
     pub fn index_note(&mut self, note: &Note) -> Result<bool> {
         let gist = match note.gist() {
             Some(g) if !g.is_empty() => g,
@@ -236,11 +248,13 @@ impl SearchEngine {
     }
 
     /// Get index statistics
+    #[allow(dead_code)]
     pub fn get_stats(&self) -> Result<IndexStats> {
         self.db.get_stats()
     }
 }
 
+#[allow(dead_code)]
 fn compute_boosted_score(semantic_score: f32, candidate: &NoteRecord, boost: &BoostOptions) -> f32 {
     const SEMANTIC_WEIGHT: f32 = 0.7;
     const METADATA_WEIGHT: f32 = 0.3;

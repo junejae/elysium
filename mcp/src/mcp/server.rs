@@ -10,7 +10,7 @@ use serde::Serialize;
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 
-use crate::core::note::{collect_all_notes, collect_note_names, Note};
+use crate::core::note::{collect_all_notes, collect_note_names};
 use crate::core::paths::VaultPaths;
 use crate::core::schema::SchemaValidator;
 use crate::search::engine::SearchEngine;
@@ -1262,4 +1262,324 @@ pub async fn run_mcp_server(vault_path: PathBuf) -> Result<()> {
     server.waiting().await?;
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::core::frontmatter::Frontmatter;
+    use crate::mcp::params::{AuditParams, GetNoteParams, ListNotesParams, SearchParams};
+    use crate::search::embedder::{Embedder, HtpEmbedder};
+    use crate::search::plugin_index::{
+        HnswIndex, IndexMeta, PluginSearchEngine, PLUGIN_INDEX_VERSION,
+    };
+    use rmcp::handler::server::wrapper::Parameters;
+    use rmcp::model::RawContent;
+    use serde::Deserialize;
+    use std::collections::HashMap;
+    use std::fs;
+    use std::path::{Path, PathBuf};
+    use tempfile::tempdir;
+
+    fn fixture_root() -> PathBuf {
+        let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../tests/fixtures/vault_small");
+        let resolved = root.canonicalize().unwrap_or(root);
+        assert!(
+            resolved.exists(),
+            "fixture vault not found at {}",
+            resolved.display()
+        );
+        resolved
+    }
+
+    fn extract_text(result: &CallToolResult) -> String {
+        result
+            .content
+            .iter()
+            .find_map(|content| match &content.raw {
+                RawContent::Text(text) => Some(text.text.clone()),
+                _ => None,
+            })
+            .unwrap_or_default()
+    }
+
+    #[derive(Deserialize)]
+    struct BaselineSuite {
+        baselines: Vec<SearchBaseline>,
+    }
+
+    #[derive(Deserialize)]
+    struct SearchBaseline {
+        mode: String,
+        #[serde(rename = "maxRank")]
+        max_rank: Option<usize>,
+        queries: Vec<SearchBaselineQuery>,
+    }
+
+    #[derive(Deserialize)]
+    struct SearchBaselineQuery {
+        query: String,
+        expected: String,
+    }
+
+    #[derive(serde::Serialize)]
+    struct PluginNoteRecord {
+        path: String,
+        gist: String,
+        mtime: u64,
+        indexed: bool,
+        fields: HashMap<String, serde_json::Value>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        tags: Option<Vec<String>>,
+    }
+
+    fn copy_fixture_notes(dest_root: &Path) {
+        let fixture = fixture_root();
+        for entry in fs::read_dir(fixture).expect("read fixture dir") {
+            let entry = entry.expect("read fixture entry");
+            let path = entry.path();
+            if path.extension().and_then(|ext| ext.to_str()) != Some("md") {
+                continue;
+            }
+            let file_name = path
+                .file_name()
+                .and_then(|name| name.to_str())
+                .expect("fixture filename");
+            let dest_path = dest_root.join(file_name);
+            fs::copy(&path, &dest_path).expect("copy fixture note");
+        }
+    }
+
+    fn write_plugin_index(vault_root: &Path) {
+        let embedder = HtpEmbedder::new();
+
+        let mut records = Vec::new();
+        let mut ids = Vec::new();
+        let mut vectors = Vec::new();
+
+        let fixture = fixture_root();
+        let mut fixture_count = 0;
+
+        for entry in fs::read_dir(&fixture).expect("read fixture dir") {
+            let entry = entry.expect("read fixture entry");
+            let path = entry.path();
+            if path.extension().and_then(|ext| ext.to_str()) != Some("md") {
+                continue;
+            }
+
+            let file_name = path
+                .file_name()
+                .and_then(|name| name.to_str())
+                .expect("fixture filename")
+                .to_string();
+
+            let content = fs::read_to_string(&path).expect("read fixture note");
+            let frontmatter = Frontmatter::parse(&content);
+            let gist = frontmatter
+                .as_ref()
+                .and_then(|fm| fm.gist())
+                .unwrap_or_else(|| file_name.trim_end_matches(".md"))
+                .to_string();
+
+            let fields = frontmatter
+                .as_ref()
+                .map(|fm| fm.to_json_map())
+                .unwrap_or_default();
+            let tags = frontmatter
+                .as_ref()
+                .and_then(|fm| fm.get_list("tags"))
+                .cloned();
+
+            ids.push(file_name.clone());
+            vectors.push(embedder.embed(&gist).expect("embed gist"));
+
+            records.push(PluginNoteRecord {
+                path: file_name,
+                gist,
+                mtime: 0,
+                indexed: true,
+                fields,
+                tags,
+            });
+            fixture_count += 1;
+        }
+
+        assert!(fixture_count > 0, "fixture notes missing");
+
+        let sample_vector = vectors
+            .first()
+            .cloned()
+            .expect("expected at least one vector");
+        let hnsw = HnswIndex::from_vectors(ids, vectors);
+        assert!(!hnsw.is_empty(), "constructed HNSW index is empty");
+        let sanity = hnsw.search(&sample_vector, 3, 50);
+        assert!(!sanity.is_empty(), "constructed HNSW search returned empty");
+        let hnsw_data = bincode::serialize(&hnsw).expect("serialize hnsw");
+
+        let meta = IndexMeta {
+            embedding_mode: "htp".to_string(),
+            dimension: embedder.dimension(),
+            note_count: records.len(),
+            index_size: hnsw_data.len(),
+            exported_at: 0,
+            version: PLUGIN_INDEX_VERSION,
+        };
+
+        let index_dir = vault_root.join(".obsidian/plugins/elysium/index");
+        fs::create_dir_all(&index_dir).expect("create index dir");
+        fs::write(index_dir.join("hnsw.bin"), hnsw_data).expect("write hnsw.bin");
+        fs::write(
+            index_dir.join("notes.json"),
+            serde_json::to_string_pretty(&records).expect("serialize notes"),
+        )
+        .expect("write notes.json");
+        fs::write(
+            index_dir.join("meta.json"),
+            serde_json::to_string_pretty(&meta).expect("serialize meta"),
+        )
+        .expect("write meta.json");
+    }
+
+    fn setup_vault_with_index() -> tempfile::TempDir {
+        let temp = tempdir().expect("create temp dir");
+        copy_fixture_notes(temp.path());
+        write_plugin_index(temp.path());
+        temp
+    }
+
+    #[tokio::test]
+    async fn smoke_vault_list_notes() {
+        let service = VaultService::new(fixture_root());
+        let params = ListNotesParams {
+            note_type: None,
+            area: None,
+            limit: 50,
+            fields: Some("standard".to_string()),
+        };
+
+        let result = service
+            .vault_list_notes(Parameters(params))
+            .await
+            .expect("vault_list_notes should succeed");
+        assert_eq!(result.is_error, Some(false));
+
+        let text = extract_text(&result);
+        let items: Vec<serde_json::Value> =
+            serde_json::from_str(&text).expect("list output should be JSON");
+        assert_eq!(items.len(), 3);
+        assert!(items.iter().all(|item| item.get("path").is_some()));
+    }
+
+    #[tokio::test]
+    async fn smoke_vault_get_note() {
+        let service = VaultService::new(fixture_root());
+        let params = GetNoteParams {
+            note: "alpha".to_string(),
+            fields: Some("standard".to_string()),
+        };
+
+        let result = service
+            .vault_get_note(Parameters(params))
+            .await
+            .expect("vault_get_note should succeed");
+
+        let text = extract_text(&result);
+        assert!(text.contains("## Metadata"));
+        assert!(text.contains("# Alpha"));
+    }
+
+    #[tokio::test]
+    async fn smoke_vault_status() {
+        let service = VaultService::new(fixture_root());
+        let result = service
+            .vault_status()
+            .await
+            .expect("vault_status should succeed");
+
+        let text = extract_text(&result);
+        let status: serde_json::Value =
+            serde_json::from_str(&text).expect("status output should be JSON");
+        assert_eq!(status["total_notes"].as_u64(), Some(3));
+    }
+
+    #[tokio::test]
+    async fn smoke_vault_audit() {
+        let service = VaultService::new(fixture_root());
+        let params = AuditParams {
+            quick: true,
+            verbose: false,
+        };
+
+        let result = service
+            .vault_audit(Parameters(params))
+            .await
+            .expect("vault_audit should succeed");
+
+        let text = extract_text(&result);
+        let audit: serde_json::Value =
+            serde_json::from_str(&text).expect("audit output should be JSON");
+        let total_checks = audit["total_checks"].as_u64().unwrap_or(0);
+        assert!(total_checks >= 2);
+    }
+
+    #[tokio::test]
+    async fn smoke_vault_search_golden() {
+        let temp = setup_vault_with_index();
+        let service = VaultService::new(temp.path().to_path_buf());
+
+        let baseline_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("../tests/fixtures/golden/search_baselines.json");
+        let baseline: BaselineSuite = serde_json::from_str(
+            &fs::read_to_string(&baseline_path).expect("read search baseline"),
+        )
+        .expect("parse search baseline");
+
+        let plugin_engine = PluginSearchEngine::load(temp.path()).expect("load plugin index");
+        let sanity_results = plugin_engine
+            .search("alpha", 3)
+            .expect("plugin search should succeed");
+        assert!(
+            !sanity_results.is_empty(),
+            "plugin search should return results"
+        );
+
+        for baseline_case in baseline.baselines {
+            let max_rank = baseline_case.max_rank.unwrap_or(1).max(1);
+            let limit = max_rank.max(3);
+
+            for query in baseline_case.queries {
+                let params = SearchParams {
+                    query: query.query.clone(),
+                    limit,
+                    note_type: None,
+                    area: None,
+                    fields: Some("default".to_string()),
+                    search_mode: Some(baseline_case.mode.clone()),
+                };
+
+                let result = service
+                    .vault_search(Parameters(params))
+                    .await
+                    .expect("vault_search should succeed");
+                let text = extract_text(&result);
+                let results: Vec<serde_json::Value> =
+                    serde_json::from_str(&text).expect("search output should be JSON");
+
+                let top_slice = results.iter().take(max_rank);
+                let top_paths: Vec<String> = top_slice
+                    .filter_map(|item| item.get("path").and_then(|value| value.as_str()))
+                    .map(|path| path.to_string())
+                    .collect();
+
+                assert!(
+                    top_paths.contains(&query.expected),
+                    "expected {} in top {} for mode {}. got {:?}",
+                    query.expected,
+                    max_rank,
+                    baseline_case.mode,
+                    top_paths
+                );
+            }
+        }
+    }
 }

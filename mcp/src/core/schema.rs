@@ -8,14 +8,17 @@ use super::config::SchemaConfig;
 
 /// Legacy static sets for backward compatibility
 /// These are used when no config is available
+#[allow(dead_code)]
 pub fn default_types() -> HashSet<&'static str> {
     HashSet::from(["note", "term", "project", "log", "lesson"])
 }
 
+#[allow(dead_code)]
 pub fn default_statuses() -> HashSet<&'static str> {
     HashSet::from(["active", "done", "archived"])
 }
 
+#[allow(dead_code)]
 pub fn default_areas() -> HashSet<&'static str> {
     HashSet::from([
         "work",
@@ -38,6 +41,7 @@ lazy_static::lazy_static! {
 }
 
 /// Severity level for schema violations
+#[allow(dead_code)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ViolationSeverity {
     Error,
@@ -54,6 +58,7 @@ pub enum SchemaViolation {
     TooManyTags(usize),
     HierarchicalTag(String),
     NonLowercaseTag(String),
+    #[allow(dead_code)]
     EmptyGist,
     // New validation types
     /// Multiple frontmatter blocks detected in file
@@ -78,6 +83,7 @@ impl SchemaViolation {
     }
 
     /// Get severity level of this violation
+    #[allow(dead_code)]
     pub fn severity(&self) -> ViolationSeverity {
         match self {
             Self::FoldedScalarWarning { .. } => ViolationSeverity::Warning,
@@ -215,6 +221,7 @@ impl SchemaValidator {
     }
 
     /// Create validator with default (hardcoded) values
+    #[allow(dead_code)]
     pub fn default() -> Self {
         Self {
             types: default_types().iter().map(|s| s.to_string()).collect(),

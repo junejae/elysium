@@ -16,7 +16,7 @@ use super::embedder::{create_embedder, SearchConfig};
 // HNSW Index (copied from plugin WASM for binary compatibility)
 // ============================================================================
 
-const M: usize = 16;
+pub(crate) const PLUGIN_INDEX_VERSION: u32 = 1;
 
 #[derive(Clone, Serialize, Deserialize)]
 pub struct HnswIndex {
@@ -231,6 +231,46 @@ impl HnswIndex {
             })
             .collect()
     }
+
+    #[cfg(test)]
+    #[allow(dead_code)]
+    pub(crate) fn from_vectors(ids: Vec<String>, vectors: Vec<Vec<f32>>) -> Self {
+        assert_eq!(
+            ids.len(),
+            vectors.len(),
+            "ids and vectors must be same length"
+        );
+        let mut id_to_idx = HashMap::new();
+        for (idx, id) in ids.iter().enumerate() {
+            id_to_idx.insert(id.clone(), idx);
+        }
+
+        let node_count = ids.len();
+        let nodes = ids
+            .into_iter()
+            .zip(vectors.into_iter())
+            .enumerate()
+            .map(|(idx, (id, vector))| {
+                let neighbors = (0..node_count)
+                    .filter(|neighbor| *neighbor != idx)
+                    .collect::<Vec<_>>();
+                Node {
+                    id,
+                    vector,
+                    level: 0,
+                    neighbors: vec![neighbors],
+                }
+            })
+            .collect::<Vec<_>>();
+
+        Self {
+            nodes,
+            entry_point: if node_count > 0 { Some(0) } else { None },
+            max_level: 0,
+            id_to_idx,
+            deleted: HashSet::new(),
+        }
+    }
 }
 
 // ============================================================================
@@ -350,6 +390,7 @@ pub struct PluginSearchEngine {
     hnsw: HnswIndex,
     notes: HashMap<String, NoteRecord>,
     embedder: Box<dyn Embedder>,
+    #[allow(dead_code)]
     meta: IndexMeta,
 }
 
@@ -364,6 +405,13 @@ impl PluginSearchEngine {
         }
 
         let meta = reader.load_meta()?;
+        if meta.version != PLUGIN_INDEX_VERSION {
+            anyhow::bail!(
+                "Plugin index version mismatch (expected {}, found {}). Rebuild the index with a compatible plugin.",
+                PLUGIN_INDEX_VERSION,
+                meta.version
+            );
+        }
         let notes_vec = reader.load_notes()?;
         let hnsw = reader.load_hnsw()?;
 
@@ -446,18 +494,22 @@ impl PluginSearchEngine {
         self.notes.values()
     }
 
+    #[allow(dead_code)]
     pub fn note_count(&self) -> usize {
         self.notes.len()
     }
 
+    #[allow(dead_code)]
     pub fn embedding_mode(&self) -> &str {
         &self.meta.embedding_mode
     }
 
+    #[allow(dead_code)]
     pub fn dimension(&self) -> usize {
         self.meta.dimension
     }
 
+    #[allow(dead_code)]
     pub fn exported_at(&self) -> u64 {
         self.meta.exported_at
     }

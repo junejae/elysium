@@ -1,0 +1,72 @@
+{
+  "baselines": [
+    {
+      "mode": "semantic",
+      "maxRank": 1,
+      "queries": [
+        {
+          "query": "work note",
+          "expected": "alpha.md"
+        },
+        {
+          "query": "note gist",
+          "expected": "alpha.md"
+        },
+        {
+          "query": "tech term",
+          "expected": "beta.md"
+        },
+        {
+          "query": "term gist",
+          "expected": "beta.md"
+        },
+        {
+          "query": "learning project",
+          "expected": "gamma.md"
+        },
+        {
+          "query": "project gist",
+          "expected": "gamma.md"
+        }
+      ]
+    },
+    {
+      "mode": "hybrid",
+      "maxRank": 2,
+      "queries": [
+        {
+          "query": "alpha",
+          "expected": "alpha.md"
+        },
+        {
+          "query": "demo",
+          "expected": "alpha.md"
+        },
+        {
+          "query": "work note",
+          "expected": "alpha.md"
+        },
+        {
+          "query": "beta",
+          "expected": "beta.md"
+        },
+        {
+          "query": "tech term",
+          "expected": "beta.md"
+        },
+        {
+          "query": "gamma",
+          "expected": "gamma.md"
+        },
+        {
+          "query": "learning project",
+          "expected": "gamma.md"
+        },
+        {
+          "query": "learning",
+          "expected": "gamma.md"
+        }
+      ]
+    }
+  ]
+}

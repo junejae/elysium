@@ -14,6 +14,7 @@ pub fn extract_wikilinks(content: &str) -> Vec<String> {
         .collect()
 }
 
+#[allow(dead_code)]
 #[derive(Debug, Default)]
 pub struct WikilinkReport {
     pub total_links: usize,
@@ -23,6 +24,7 @@ pub struct WikilinkReport {
     pub orphan_notes: Vec<String>,
 }
 
+#[allow(dead_code)]
 pub fn analyze_wikilinks(
     notes: &[(String, String)],
     existing_names: &HashSet<String>,

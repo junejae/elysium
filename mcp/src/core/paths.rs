@@ -8,6 +8,7 @@ pub const VAULT_PATH_ENV: &str = "ELYSIUM_VAULT_PATH";
 
 pub struct VaultPaths {
     pub root: PathBuf,
+    #[allow(dead_code)]
     pub inbox: PathBuf,
     pub config: Config,
 }
@@ -33,6 +34,7 @@ impl VaultPaths {
         }
     }
 
+    #[allow(dead_code)]
     pub fn get_config(&self) -> &Config {
         &self.config
     }

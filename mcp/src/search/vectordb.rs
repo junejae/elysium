@@ -182,6 +182,7 @@ impl VectorDB {
     }
 
     /// Delete note by ID
+    #[allow(dead_code)]
     pub fn delete_note(&self, id: &str) -> Result<()> {
         self.conn
             .execute("DELETE FROM notes WHERE id = ?1", params![id])?;
@@ -291,6 +292,7 @@ impl VectorDB {
     }
 
     /// Get all note IDs with their mtimes
+    #[allow(dead_code)]
     pub fn get_all_mtimes(&self) -> Result<Vec<(String, i64)>> {
         let mut stmt = self.conn.prepare("SELECT id, mtime FROM notes")?;
         let rows = stmt.query_map([], |row| Ok((row.get(0)?, row.get(1)?)))?;
@@ -329,6 +331,7 @@ impl VectorDB {
 pub struct IndexStats {
     pub note_count: usize,
     pub embedding_count: usize,
+    #[allow(dead_code)]
     pub last_indexed: Option<i64>,
 }
 

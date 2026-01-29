@@ -75,6 +75,7 @@ impl TagEmbedder {
     }
 
     /// Generate embeddings for multiple texts
+    #[allow(dead_code)]
     pub fn embed_batch(&self, texts: &[&str]) -> Result<Vec<Vec<f32>>> {
         let embeddings = self.model.encode(texts).context("Failed to encode texts")?;
 

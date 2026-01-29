@@ -2,13 +2,11 @@
 //!
 //! Uses Model2Vec embeddings to match note gists to relevant tags.
 
-use anyhow::Result;
-use serde::Serialize;
-use std::collections::HashSet;
-
 use super::database::TagDatabase;
 use super::embedder::TagEmbedder;
 use super::keyword::KeywordExtractor;
+use anyhow::Result;
+use serde::Serialize;
 
 /// A suggested tag with confidence score
 #[derive(Debug, Clone, Serialize)]
@@ -37,6 +35,7 @@ impl TagMatcher {
     }
 
     /// Set similarity threshold
+    #[allow(dead_code)]
     pub fn with_threshold(mut self, threshold: f32) -> Self {
         self.threshold = threshold;
         self
@@ -136,6 +135,7 @@ impl TagMatcher {
     }
 
     /// Find similar tags (for merge suggestions)
+    #[allow(dead_code)]
     pub fn find_similar_tags(&self, tag_name: &str, threshold: f32) -> Result<Vec<(String, f32)>> {
         let source_tag = match self.database.get_tag(tag_name)? {
             Some(t) => t,
@@ -160,6 +160,7 @@ impl TagMatcher {
     }
 
     /// Analyze tags and suggest merges
+    #[allow(dead_code)]
     pub fn analyze_for_merges(&self, threshold: f32) -> Result<Vec<MergeSuggestion>> {
         let tags = self.database.get_all_tags()?;
         let mut suggestions = Vec::new();
@@ -202,11 +203,13 @@ impl TagMatcher {
     }
 
     /// Get embedder reference
+    #[allow(dead_code)]
     pub fn embedder(&self) -> &TagEmbedder {
         &self.embedder
     }
 
     /// Get database reference
+    #[allow(dead_code)]
     pub fn database(&self) -> &TagDatabase {
         &self.database
     }
@@ -453,6 +456,7 @@ lazy_static::lazy_static! {
 }
 
 /// Suggestion to merge two similar tags
+#[allow(dead_code)]
 #[derive(Debug, Clone, Serialize)]
 pub struct MergeSuggestion {
     pub keep: String,

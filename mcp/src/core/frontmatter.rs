@@ -45,6 +45,7 @@ pub fn count_frontmatter_blocks(content: &str) -> usize {
 }
 
 /// Check if content has duplicate frontmatter blocks
+#[allow(dead_code)]
 pub fn has_duplicate_frontmatter(content: &str) -> bool {
     count_frontmatter_blocks(content) > 1
 }
@@ -106,6 +107,7 @@ impl FieldValue {
     }
 
     /// Convert to owned String (for String variant)
+    #[allow(dead_code)]
     pub fn to_string_value(&self) -> Option<String> {
         match self {
             FieldValue::String(s) => Some(s.clone()),
@@ -257,6 +259,7 @@ impl Frontmatter {
     }
 
     /// Get any field by key (without elysium_ prefix)
+    #[allow(dead_code)]
     pub fn get(&self, key: &str) -> Option<&FieldValue> {
         self.fields.get(key)
     }
@@ -272,6 +275,7 @@ impl Frontmatter {
     }
 
     /// Get all field keys
+    #[allow(dead_code)]
     pub fn keys(&self) -> Vec<&str> {
         self.fields.keys().map(|s| s.as_str()).collect()
     }
@@ -318,11 +322,13 @@ impl Frontmatter {
     // =========================================
 
     /// Validate frontmatter using default schema (backward compatible)
+    #[allow(dead_code)]
     pub fn validate(&self) -> Vec<SchemaViolation> {
         self.validate_with_defaults()
     }
 
     /// Validate frontmatter using hardcoded default schema
+    #[allow(dead_code)]
     fn validate_with_defaults(&self) -> Vec<SchemaViolation> {
         let mut violations = Vec::new();
 
@@ -608,11 +614,8 @@ More content.
 
     #[test]
     fn test_validate_yaml_syntax_bad_indentation() {
-        let yaml = "elysium_type: note\n  bad_indent: value";
         // This is actually valid YAML (value is a nested object)
         // Let's use a clearly invalid case
-        let invalid_yaml = "key: value\n  - item"; // mixing styles
-        let result = validate_yaml_syntax(invalid_yaml);
         // serde_yaml is permissive, so we test with truly invalid YAML
         let really_invalid = "key: [unclosed";
         assert!(validate_yaml_syntax(really_invalid).is_err());

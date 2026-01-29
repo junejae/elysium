@@ -213,6 +213,7 @@ impl SchemaConfig {
         self.areas.iter().cloned().collect()
     }
 
+    #[allow(dead_code)]
     pub fn is_required(&self, field: &str) -> bool {
         self.required_fields.iter().any(|f| f == field)
     }
@@ -400,6 +401,7 @@ impl Config {
         Ok(config)
     }
 
+    #[allow(dead_code)]
     pub fn save(&self, vault_root: &Path) -> Result<()> {
         let config_path = vault_root.join(PLUGIN_CONFIG_PATH);
         if let Some(parent) = config_path.parent() {
@@ -411,6 +413,7 @@ impl Config {
     }
 
     /// Generate default config file content
+    #[allow(dead_code)]
     pub fn default_json() -> String {
         serde_json::to_string_pretty(&Config::default()).unwrap()
     }
@@ -421,11 +424,13 @@ impl Config {
     }
 
     /// Get the inbox path (from root-level inbox config)
+    #[allow(dead_code)]
     pub fn get_inbox_path(&self) -> &str {
         &self.inbox.path
     }
 
     /// Check if inbox is enabled
+    #[allow(dead_code)]
     pub fn is_inbox_enabled(&self) -> bool {
         self.inbox.enabled
     }
@@ -434,6 +439,7 @@ impl Config {
 /// Resolved absolute paths for vault
 #[derive(Debug, Clone)]
 pub struct ResolvedPaths {
+    #[allow(dead_code)]
     pub root: PathBuf,
     pub inbox: PathBuf,
     pub data_dir: PathBuf,

@@ -4,6 +4,8 @@ import { IndexedDbStorage, NoteRecord } from '../storage/IndexedDbStorage';
 import { ElysiumConfig, FIELD_NAMES } from '../config/ElysiumConfig';
 import { ModelLoader } from '../embedder/ModelLoader';
 
+const PLUGIN_INDEX_VERSION = 1;
+
 const isExcludedPath = (path: string): boolean => {
   return path.split('/').some(part => part.startsWith('.'));
 };
@@ -229,28 +231,76 @@ export class Indexer {
         await this.app.vault.adapter.mkdir(indexDir);
       }
 
-      // 1. Save HNSW binary
-      await this.app.vault.adapter.writeBinary(`${indexDir}/hnsw.bin`, hnswData);
-
-      // 2. Save notes metadata
+      // 1. Build notes + meta and validate export contract
       const notes = await this.storage.getAllNotes();
       const notesJson = JSON.stringify(notes, null, 2);
-      await this.app.vault.adapter.write(`${indexDir}/notes.json`, notesJson);
 
-      // 3. Save meta info
       const meta = {
         embeddingMode: this.getEmbeddingMode(),
         dimension: this.isAdvancedSearchEnabled() ? 256 : 384,
         noteCount: notes.length,
         indexSize: hnswData.length,
         exportedAt: Date.now(),
-        version: 1,
+        version: PLUGIN_INDEX_VERSION,
       };
+
+      this.validateIndexExport(meta, notes, hnswData);
+
+      // 2. Save HNSW binary
+      await this.app.vault.adapter.writeBinary(`${indexDir}/hnsw.bin`, hnswData);
+
+      await this.app.vault.adapter.write(`${indexDir}/notes.json`, notesJson);
+
+      // 3. Save meta info
       await this.app.vault.adapter.write(`${indexDir}/meta.json`, JSON.stringify(meta, null, 2));
 
       console.log(`[Elysium] Exported index to files: ${notes.length} notes, ${hnswData.length} bytes`);
     } catch (e) {
       console.error('[Elysium] Failed to export index to files:', e);
+    }
+  }
+
+  private validateIndexExport(
+    meta: {
+      embeddingMode: string;
+      dimension: number;
+      noteCount: number;
+      indexSize: number;
+      exportedAt: number;
+      version: number;
+    },
+    notes: NoteRecord[],
+    hnswData: Uint8Array,
+  ): void {
+    if (meta.version !== PLUGIN_INDEX_VERSION) {
+      throw new Error(`Index version mismatch: expected ${PLUGIN_INDEX_VERSION}, got ${meta.version}`);
+    }
+
+    if (meta.noteCount !== notes.length) {
+      throw new Error(`Index noteCount mismatch: meta=${meta.noteCount}, notes=${notes.length}`);
+    }
+
+    const expectedDimension = meta.embeddingMode === 'model2vec' ? 256 : 384;
+    if (meta.dimension !== expectedDimension) {
+      throw new Error(`Index dimension mismatch: expected ${expectedDimension}, got ${meta.dimension}`);
+    }
+
+    if (notes.length > 0 && hnswData.length === 0) {
+      throw new Error('Index data is empty but notes are present');
+    }
+
+    const seen = new Set<string>();
+    for (const note of notes) {
+      if (!note.path) {
+        throw new Error('Index note missing path');
+      }
+      if (seen.has(note.path)) {
+        throw new Error(`Duplicate note path in index: ${note.path}`);
+      }
+      seen.add(note.path);
+      if (typeof note.gist !== 'string') {
+        throw new Error(`Index note missing gist: ${note.path}`);
+      }
     }
   }
 

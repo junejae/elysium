@@ -14,6 +14,7 @@ pub trait Embedder: Send + Sync {
     fn embed(&self, text: &str) -> Result<Vec<f32>>;
 
     /// Generate embeddings for multiple texts
+    #[allow(dead_code)]
     fn embed_batch(&self, texts: &[&str]) -> Result<Vec<Vec<f32>>>;
 
     /// Get embedding dimension
@@ -76,6 +77,7 @@ pub const MODEL2VEC_DIM: usize = 256;
 /// Model2Vec based embedder for advanced semantic search
 pub struct Model2VecEmbedder {
     model: Model2Vec,
+    #[allow(dead_code)]
     model_path: String,
 }
 

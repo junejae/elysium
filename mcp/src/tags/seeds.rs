@@ -10,7 +10,9 @@ use super::embedder::TagEmbedder;
 /// Seed tag definition
 pub struct SeedTag {
     pub name: &'static str,
+    #[allow(dead_code)]
     pub description: &'static str,
+    #[allow(dead_code)]
     pub aliases: &'static [&'static str],
 }
 
@@ -178,6 +180,7 @@ pub const SEED_TAGS: &[SeedTag] = &[
 ];
 
 /// Initialize tag database with seed tags
+#[allow(dead_code)]
 pub fn seed_database(db: &TagDatabase, embedder: &TagEmbedder) -> Result<usize> {
     let mut count = 0;
 
@@ -188,7 +191,7 @@ pub fn seed_database(db: &TagDatabase, embedder: &TagEmbedder) -> Result<usize> 
         }
 
         // Add tag with embedding
-        let tag_id = db.add_tag(seed.name, seed.description, embedder)?;
+        db.add_tag(seed.name, seed.description, embedder)?;
 
         // Add aliases
         for alias in seed.aliases {
@@ -204,7 +207,6 @@ pub fn seed_database(db: &TagDatabase, embedder: &TagEmbedder) -> Result<usize> 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::path::Path;
 
     #[test]
     fn test_seed_count() {

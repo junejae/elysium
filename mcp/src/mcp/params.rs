@@ -89,9 +89,11 @@ pub struct RelatedParams {
     pub limit: usize,
     #[schemars(description = "Boost notes with same type as source")]
     #[serde(default)]
+    #[allow(dead_code)]
     pub boost_type: bool,
     #[schemars(description = "Boost notes with same area as source")]
     #[serde(default)]
+    #[allow(dead_code)]
     pub boost_area: bool,
 }
 
@@ -192,6 +194,7 @@ pub fn default_strategy() -> String {
 }
 
 /// Parameters for vault_tags_suggest tool
+#[allow(dead_code)]
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct TagsSuggestParams {
     /// Text to analyze for tag suggestions (gist or title)
@@ -205,6 +208,7 @@ pub struct TagsSuggestParams {
 }
 
 /// Parameters for vault_tags_analyze tool
+#[allow(dead_code)]
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct TagsAnalyzeParams {
     /// Similarity threshold for merge suggestions (default: 0.7)
@@ -214,6 +218,7 @@ pub struct TagsAnalyzeParams {
 }
 
 /// Parameters for vault_suggest_tags (advanced search based)
+#[allow(dead_code)]
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct SuggestTagsParams {
     /// Note title or path to analyze
@@ -238,14 +243,17 @@ pub struct SuggestTagsParams {
     pub min_frequency: usize,
 }
 
+#[allow(dead_code)]
 pub fn default_similar_notes() -> usize {
     10
 }
 
+#[allow(dead_code)]
 pub fn default_min_frequency() -> usize {
     2
 }
 
+#[allow(dead_code)]
 pub fn default_merge_threshold() -> f32 {
     0.7
 }
